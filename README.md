@@ -164,3 +164,19 @@ Workflow: `.github/workflows/oss-batch-pipeline.yml`
 
 - [Cloud Run deployment guide](docs/cloud_run_deploy.md)
 - [DE Zoomcamp project document](docs/de_zoomcamp_project_document.md)
+
+## 11. Live Demo and Evidence
+
+- **Live Dashboard:** https://oss-analytics-dashboard-415500942280.us-central1.run.app/
+- **GitHub Repository:** https://github.com/hyeonseo2/github-oss-network-trend
+
+### Screenshots
+
+#### Trend View (default: 30 days, network on)
+
+![Trend view](./assets/demo/oss-network-trend-dashboard-trend.png)
+
+#### Network View
+
+![Network view](./assets/demo/oss-network-trend-dashboard-network.png)
+
