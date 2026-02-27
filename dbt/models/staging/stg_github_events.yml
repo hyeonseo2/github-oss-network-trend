@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: stg_github_events
+    description: "Staging model for GitHub events"
+    columns:
+      - name: event_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['PushEvent', 'PullRequestEvent', 'IssuesEvent']
+      - name: repo_name
+        tests:
+          - not_null
+      - name: created_at
+        tests:
+          - not_null
+      - name: contributor
+        tests:
+          - null_rate_below:
+              max_null_rate: 0.01

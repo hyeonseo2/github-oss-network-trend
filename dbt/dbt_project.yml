@@ -1,0 +1,31 @@
+name: "oss_analytics"
+version: "1.0.0"
+config-version: 2
+
+profile: "oss_analytics"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  gcp_project_id: ""
+  raw_dataset: "oss_analytics_raw"
+  raw_table: "raw_github_events"
+  analysis_window_days: 30
+  network_window_days: 30
+  trend_output_days: 30
+  min_daily_events_for_trend: 5
+
+models:
+  oss_analytics:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: table
+    marts:
+      +materialized: table

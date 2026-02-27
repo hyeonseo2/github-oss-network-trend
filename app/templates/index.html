@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GitHub OSS Network Trend Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+      :root {
+        --bg: #f4f7ff;
+        --surface: #ffffff;
+        --text: #111827;
+        --muted: #4b5563;
+        --line: #dde3f0;
+        --brand: #335cff;
+        --accent: #10b981;
+        --warn: #dc2626;
+        --radius-lg: 14px;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, "Noto Sans KR", Arial, sans-serif;
+        background: linear-gradient(180deg, #ffffff 0%, #f1f5ff 280px);
+        color: var(--text);
+      }
+
+      .container {
+        max-width: 1360px;
+        margin: 18px auto;
+        padding: 0 16px 28px;
+      }
+
+      .controls-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 32px;
+        letter-spacing: -0.3px;
+        line-height: 1.2;
+      }
+
+      h2 {
+        margin: 0 0 10px;
+        font-size: 22px;
+        letter-spacing: -0.2px;
+        line-height: 1.35;
+      }
+
+      .meta {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid #e5ebf5;
+        border-radius: var(--radius-lg);
+        padding: 18px;
+        margin-top: 14px;
+        box-shadow: 0 12px 24px rgba(17, 24, 39, 0.05);
+      }
+
+      .error {
+        color: var(--warn);
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        padding: 10px 12px;
+        border-radius: 10px;
+        font-size: 15px;
+      }
+
+      .empty {
+        color: var(--muted);
+        margin: 6px 0 0;
+        font-size: 15px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid #ecf0f7;
+        border-radius: 12px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 760px;
+        background: #fff;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid #edf1f6;
+        text-align: left;
+        padding: 12px 10px;
+        font-size: 14px;
+        line-height: 1.4;
+        white-space: nowrap;
+      }
+
+      th {
+        background: #f8fbff;
+        position: sticky;
+        top: 0;
+        color: #374151;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      a {
+        color: var(--brand);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      a:hover { text-decoration: underline; }
+
+      .chart-wrap {
+        height: 380px;
+      }
+
+      canvas {
+        width: 100% !important;
+        height: 100% !important;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1.3fr 1fr 1fr 1fr auto;
+        gap: 10px;
+        align-items: center;
+        margin: 12px 0 12px;
+      }
+
+      .controls input[type="search"],
+      .controls input[type="range"],
+      .controls button,
+      .controls select {
+        width: 100%;
+        font-size: 14px;
+      }
+
+      .controls input[type="search"] {
+        padding: 10px 12px;
+        border: 1px solid #d7deeb;
+        border-radius: 10px;
+        outline: none;
+      }
+
+      .controls input[type="search"]:focus {
+        border-color: #9db4ff;
+        box-shadow: 0 0 0 3px rgba(64, 116, 255, 0.15);
+      }
+
+      .chip {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .status-bar {
+        margin-top: 10px;
+        padding: 8px 12px;
+        border: 1px dashed #c7d2fe;
+        border-radius: 10px;
+        background: #f8faff;
+        color: #334155;
+        font-size: 14px;
+      }
+
+      .status-bar strong {
+        color: #111827;
+      }
+
+      .controls button {
+        padding: 10px 12px;
+        border: 1px solid #d7deeb;
+        border-radius: 10px;
+        background: #fff;
+        color: #111827;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .controls button:hover {
+        background: #f0f4ff;
+        border-color: #a6b9f8;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0 12px;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #f5f7ff;
+        border: 1px solid #dbe4fb;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 13px;
+        color: #334155;
+      }
+
+      .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      #networkGraph {
+        height: 560px;
+        border: 1px solid #e5e9f5;
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0 12px;
+      }
+
+      .filter-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 14px;
+        border-radius: 999px;
+        border: 1px solid #d8e0f4;
+        color: #1f2937;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
+        background: #ffffff;
+      }
+
+      .filter-pill:hover {
+        background: #f3f6ff;
+        border-color: #b6c5ff;
+      }
+
+      .filter-pill.active {
+        color: #ffffff;
+        background: #335cff;
+        border-color: #335cff;
+      }
+
+      @media (max-width: 1100px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .controls {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+        .controls-top {
+          align-items: flex-start;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          margin: 10px auto;
+          padding: 0 12px 20px;
+        }
+        h1 {
+          font-size: 28px;
+        }
+        h2 {
+          font-size: 20px;
+        }
+        .card {
+          padding: 14px;
+          margin-top: 12px;
+        }
+        .meta,
+        .status-bar,
+        .filter-pill,
+        .controls button,
+        .controls input,
+        .controls select,
+        .legend-item {
+          font-size: 13px;
+        }
+        .chart-wrap {
+          height: 320px;
+        }
+        .filters .filter-pill {
+          min-width: 86px;
+          padding: 9px 10px;
+        }
+        table { min-width: 680px; }
+        th, td { padding: 10px 8px; }
+        #networkGraph {
+          height: 420px;
+        }
+      }
+
+      @media (min-width: 1200px) {
+        .container { padding: 0 20px 32px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="controls-top">
+        <div>
+          <h1>GitHub OSS Network Trend Dashboard</h1>
+        </div>
+        <div>
+          <div class="filters" role="group" aria-label="Aggregation window">
+            <span class="chip">Window</span>
+            <a href="/?window=7&trend_mode=trending&network={{ 1 if include_network else 0 }}" class="filter-pill{% if window_days == 7 %} active{% endif %}">7D</a>
+            <a href="/?window=14&trend_mode=trending&network={{ 1 if include_network else 0 }}" class="filter-pill{% if window_days == 14 %} active{% endif %}">14D</a>
+            <a href="/?window=30&trend_mode=trending&network={{ 1 if include_network else 0 }}" class="filter-pill{% if window_days == 30 %} active{% endif %}">30D</a>
+          </div>
+          <div class="filters" role="group" aria-label="Network toggle">
+            <span class="chip">Network</span>
+            <a href="/?window={{ window_days }}&trend_mode=trending&network=1" class="filter-pill{% if include_network %} active{% endif %}">Show network</a>
+            <a href="/?window={{ window_days }}&trend_mode=trending&network=0" class="filter-pill{% if not include_network %} active{% endif %}">Hide network</a>
+          </div>
+        </div>
+      </div>
+      <div class="status-bar">
+        <strong>Current view:</strong> {{ window_days }}-day trend + {{ 'network view' if include_network else 'table-only view' }}
+        {% if pipeline_status %}
+        · <strong>Latest pipeline:</strong> {{ pipeline_status.status }} / {{ pipeline_status.executed_for_date or 'N/A' }} / {{ pipeline_status.run_started_at[:16] if pipeline_status.run_started_at else 'N/A' }}
+        {% else %}
+        · <strong>Latest pipeline:</strong> unavailable
+        {% endif %}
+      </div>
+
+      {% set trend_header_labels = {
+        "repo_name": "Repository",
+        "activity_delta_window": "Activity Δ",
+        "contributors_delta_window": "Contributor Δ",
+        "stars_total": "Event Stars (window)",
+        "forks_total": "Active Contributors (window)",
+        "delta_score": "Activity+Contributor Δ",
+        "last_activity_date": "Last Activity",
+      } %}
+
+      {% set edge_header_labels = {
+        "source_repo": "Source Repo",
+        "target_repo": "Target Repo",
+        "shared_contributor_count": "Shared Contributors",
+      } %}
+
+      <div class="grid">
+        <section class="card">
+          <h2>Top Growing Repos ({{ window_days }}D)</h2>
+          <p class="meta">Sorted by change in repository activity and contributor count compared with the previous {{ window_days }}-day period.</p>
+          {% if trend_error %}
+            <p class="error">{{ trend_error }}</p>
+          {% else %}
+            <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+          {% endif %}
+        </section>
+
+        <section class="card">
+          <h2>Recent User Activity Change</h2>
+          {% if trend_error %}
+            <p class="error">{{ trend_error }}</p>
+          {% else %}
+            <div class="chart-wrap"><canvas id="userEventChart"></canvas></div>
+          {% endif %}
+        </section>
+      </div>
+
+      {% if include_network %}
+      <section class="card">
+        <h2>Contributor Network</h2>
+        <p class="meta">Nodes: repositories, Edges: shared contributors between repositories.</p>
+        {% if edge_error %}
+          <p class="error">{{ edge_error }}</p>
+        {% else %}
+          <div class="chart-wrap"><canvas id="edgeChart"></canvas></div>
+          <div class="controls">
+            <select id="graphMode" style="display:none">
+              <option value="repo_relation" selected>Repo-repo relation graph</option>
+            </select>
+            <input id="searchNode" type="search" placeholder="Search node (repo)" />
+            <div>
+              <label for="minEdge" class="chip">Minimum edge weight: <span id="minEdgeValue">1</span></label>
+              <input id="minEdge" type="range" min="1" max="10" step="1" value="1" />
+            </div>
+            <button id="toggleLabels">Simplify labels</button>
+            <button id="refitGraph">Refit layout</button>
+            <button id="clearFilter">Reset filters</button>
+          </div>
+          <div id="communityLegend" class="legend"></div>
+          <div id="networkGraph"></div>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      <section class="card">
+        <h2>Repository Ranking (latest {{ window_days }} days)</h2>
+        {% if trend_error %}
+          <p class="error">{{ trend_error }}</p>
+        {% elif trend_rows %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {% for col in trend_columns %}
+                  <th>{{ trend_header_labels.get(col, col) }}</th>
+                {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in trend_rows %}
+                <tr>
+                  {% for col in trend_columns %}
+                    {% if col == 'repo_name' %}
+                      <td><a href="https://github.com/{{ row[col] }}" target="_blank" rel="noopener noreferrer">{{ row[col] }}</a></td>
+                    {% else %}
+                      <td>{{ row[col] }}</td>
+                    {% endif %}
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">No rows found.</p>
+        {% endif %}
+      </section>
+
+      {% if include_network %}
+      <section class="card">
+        <h2>Connected Repositories (shared contributors)</h2>
+        {% if edge_error %}
+          <p class="error">{{ edge_error }}</p>
+        {% elif edge_rows %}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {% for col in edge_columns %}
+                  <th>{{ edge_header_labels.get(col, col) }}</th>
+                {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in edge_rows %}
+                <tr>
+                  {% for col in edge_columns %}<td>{{ row[col] }}</td>{% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">No rows found.</p>
+        {% endif %}
+      </section>
+      {% endif %}
+    
+    </div>
+
+    <script>
+      const trendRows = {{ trend_chart_rows|tojson }};
+      const userEventRows = {{ user_event_chart_rows|tojson }};
+      const edgeRows = {{ edge_rows|tojson }};
+      const edgeChartRows = {{ edge_chart_rows|tojson }};
+      const edgeGraphRows = {{ edge_graph_rows|tojson }};
+
+      const chartLabel = (name, maxLen = 44) => {
+        const s = String(name || '');
+        return s.length > maxLen ? `${s.slice(0, maxLen - 3)}…` : s;
+      };
+
+      const parseNumber = (v) => Number(v || 0) || 0;
+      const percentChange = (curr, prev) => {
+        const p = parseNumber(prev);
+        const c = parseNumber(curr);
+        if (p === 0) return null;
+        return ((c - p) / p) * 100;
+      };
+
+      const labelColor = (v, pos = '#16a34a', neg = '#dc2626', zero = '#64748b') => {
+        if (v > 0) return pos;
+        if (v < 0) return neg;
+        return zero;
+      };
+
+      const isMobile = window.innerWidth <= 768;
+      const baseChartOpt = {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        animation: { duration: 250 },
+        interaction: {
+          mode: 'nearest',
+          intersect: false
+        },
+        layout: { padding: isMobile ? 4 : 8 },
+        plugins: {
+          tooltip: {
+            titleFont: { size: isMobile ? 12 : 13 },
+            bodyFont: { size: isMobile ? 12 : 13 }
+          },
+          legend: {
+            position: isMobile ? 'bottom' : 'top',
+            labels: {
+              color: '#334155',
+              font: { size: isMobile ? 12 : 14, weight: '600' },
+              boxWidth: isMobile ? 10 : 14,
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: '#475569',
+              font: { size: isMobile ? 11 : 13 }
+            },
+            grid: { color: '#edf2ff' }
+          },
+          y: {
+            ticks: {
+              color: '#334155',
+              font: { size: isMobile ? 11 : 12, weight: '600' },
+              padding: isMobile ? 6 : 10,
+              callback: function (value) {
+                const label = this.getLabelForValue ? this.getLabelForValue(value) : value;
+                return chartLabel(label, isMobile ? 30 : 44);
+              }
+            },
+            grid: { display: false }
+          }
+        }
+      };
+
+      if (trendRows.length) {
+        const trendActivity = trendRows.map(r => parseNumber(r.activity_delta_window || r.stars_delta_window));
+        const trendContrib = trendRows.map(r => parseNumber(r.contributors_delta_window || r.forks_delta_window));
+        new Chart(document.getElementById('trendChart'), {
+          type: 'bar',
+          data: {
+            labels: trendRows.map(r => r.repo_name),
+            datasets: [
+              {
+                label: 'Activity Change',
+                data: trendActivity,
+                backgroundColor: trendActivity.map(v => labelColor(v, '#2563eb', '#ef4444', '#64748b')),
+                borderRadius: 8
+              },
+              {
+                label: 'Contributors Change',
+                data: trendContrib,
+                backgroundColor: trendContrib.map(v => labelColor(v, '#16a34a', '#f97316', '#64748b')),
+                borderRadius: 8
+              }
+            ]
+          },
+          options: {
+            ...baseChartOpt,
+            plugins: {
+              ...baseChartOpt.plugins,
+              tooltip: {
+                ...baseChartOpt.plugins.tooltip,
+                callbacks: {
+                  label: (ctx) => {
+                    const r = trendRows[ctx.dataIndex];
+                    if (ctx.dataset.label === 'Activity Change') {
+                      return `Activity Change: ${ctx.formattedValue}`;
+                    }
+                    return `Contributor Change: ${ctx.formattedValue}`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      if (userEventRows.length) {
+        const eventDelta = userEventRows.map(r => parseNumber(r.event_delta));
+        const contributorDelta = userEventRows.map(r => parseNumber(r.contributor_delta));
+        new Chart(document.getElementById('userEventChart'), {
+          type: 'bar',
+          data: {
+            labels: userEventRows.map(r => r.repo_name),
+            datasets: [
+              {
+                label: 'Event Change',
+                data: eventDelta,
+                backgroundColor: eventDelta.map(v => labelColor(v, '#7c3aed', '#dc2626', '#64748b')),
+                borderRadius: 8
+              },
+              {
+                label: 'Contributor Change',
+                data: contributorDelta,
+                backgroundColor: contributorDelta.map(v => labelColor(v, '#d97706', '#dc2626', '#64748b')),
+                borderRadius: 8
+              }
+            ]
+          },
+          options: {
+            ...baseChartOpt,
+            plugins: {
+              ...baseChartOpt.plugins,
+              tooltip: {
+                ...baseChartOpt.plugins.tooltip,
+                callbacks: {
+                  label: (ctx) => {
+                    const r = userEventRows[ctx.dataIndex];
+                    const prevEvents = parseNumber(r.prev_event_count);
+                    const prevContrib = parseNumber(r.prev_contributor_count);
+                    const currEvents = parseNumber(r.curr_event_count);
+                    const currContrib = parseNumber(r.curr_contributor_count);
+                    const eventPct = percentChange(currEvents, prevEvents);
+                    const contribPct = percentChange(currContrib, prevContrib);
+                    const eventTxt = eventPct === null ? '(%)' : `(${eventPct >= 0 ? '+' : ''}${eventPct.toFixed(1)}%)`;
+                    const contribTxt = contribPct === null ? '(%)' : `(${contribPct >= 0 ? '+' : ''}${contribPct.toFixed(1)}%)`;
+                    if (ctx.dataset.label === 'Event Change') {
+                      return `Event Change: ${ctx.formattedValue} ${eventTxt} · Current/previous: ${currEvents}/${prevEvents}`;
+                    }
+                    return `Contributor Change: ${ctx.formattedValue} ${contribTxt} · Current/previous: ${currContrib}/${prevContrib}`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      if (edgeChartRows.length) {
+        new Chart(document.getElementById('edgeChart'), {
+          type: 'bar',
+          data: {
+            labels: edgeChartRows.map(r => String(r.repo_name || '').trim() || 'Unknown'),
+            datasets: [{
+              label: 'Network Degree',
+              data: edgeChartRows.map(r => parseNumber(r.degree)),
+              backgroundColor: '#0f766e',
+              borderRadius: 8
+            }]
+          },
+          options: {
+            ...baseChartOpt,
+            plugins: { ...baseChartOpt.plugins, legend: { display: false } },
+            scales: {
+              ...baseChartOpt.scales,
+              x: {
+                ...baseChartOpt.scales.x,
+                stacked: false,
+              },
+              y: baseChartOpt.scales.y
+            }
+          }
+        });
+      }
+
+      if (edgeGraphRows.length) {
+        const searchEl = document.getElementById('searchNode');
+        const minEdgeEl = document.getElementById('minEdge');
+        const minEdgeValueEl = document.getElementById('minEdgeValue');
+        const legendEl = document.getElementById('communityLegend');
+        const toggleLabelsBtn = document.getElementById('toggleLabels');
+        const refitBtn = document.getElementById('refitGraph');
+        const clearBtn = document.getElementById('clearFilter');
+
+        let showFullLabel = true;
+
+        function shortLabel(name, maxLength = 80) {
+          const s = String(name || '');
+          return s.length > maxLength ? `${s.slice(0, maxLength - 3)}…` : s;
+        }
+
+        function toRepoRelationGraph(minW) {
+          const edges = edgeGraphRows
+            .filter(r => Number(r.shared_contributor_count || 0) >= minW)
+            .map((r, i) => ({
+              id: `rr-${i}`,
+              from: r.source_repo,
+              to: r.target_repo,
+              value: Number(r.shared_contributor_count || 1),
+              title: `Shared contributor count: ${r.shared_contributor_count}`,
+              width: Math.min(2 + Math.max(0, Number(r.shared_contributor_count || 1)), 10),
+            }));
+
+          const score = new Map();
+          edges.forEach(e => {
+            score.set(e.from, (score.get(e.from) || 0) + e.value);
+            score.set(e.to, (score.get(e.to) || 0) + e.value);
+          });
+
+          const sortedNodes = Array.from(score.entries())
+            .sort((a, b) => b[1] - a[1]);
+
+          const labelBudget = Math.max(8, Math.min(24, Math.round(sortedNodes.length * 0.45)));
+
+          return {
+            nodes: sortedNodes.map(([id, s], idx) => {
+              const showLabel = idx < labelBudget || idx < 10;
+              return {
+                id,
+                originalLabel: id,
+                label: showLabel ? shortLabel(id, 18) : '',
+                value: s,
+                title: `${id}\nShared contributor count: ${s}`,
+                shape: 'dot',
+                size: 24 + Math.min(24, Math.sqrt(s) * 2.2),
+                color: {
+                  background: '#7c3aed',
+                  border: '#6d28d9',
+                  highlight: { background: '#5b21b6', border: '#4c1d95' },
+                  hover: { background: '#5b21b6', border: '#4c1d95' }
+                },
+                font: {
+                  color: '#111827',
+                  size: 16,
+                  face: 'Arial',
+                  strokeWidth: 3,
+                  strokeColor: '#ffffff'
+                }
+              };
+            }),
+            edges
+          };
+        }
+
+        function renderGraph() {
+          const minW = Number(minEdgeEl.value || 1);
+          minEdgeValueEl.textContent = minW;
+          const q = (searchEl.value || '').trim().toLowerCase();
+          const base = toRepoRelationGraph(minW);
+
+          const nodes = base.nodes.map(n => {
+            const isMatch = q && (n.id.toLowerCase().includes(q) || String(n.originalLabel || n.id).toLowerCase().includes(q));
+            return {
+              ...n,
+              label: isMatch || (n.label && n.label.length > 0) ? (isMatch ? shortLabel(n.originalLabel, 80) : n.label) : '',
+              color: isMatch
+                ? { background: '#111827', border: '#111827', hover: { background: '#111827', border: '#111827' }, highlight: { background: '#111827', border: '#111827' } }
+                : n.color
+            };
+          });
+
+          const edges = base.edges.map(e => ({
+            ...e,
+            color: {
+              color: '#7c3aed',
+              opacity: q ? 0.23 : 0.24
+            },
+            smooth: { type: 'straightCross' }
+          }));
+
+          const nodesDs = new vis.DataSet(nodes);
+          const edgesDs = new vis.DataSet(edges);
+          const options = {
+            autoResize: true,
+            interaction: { hover: true, tooltipDelay: 80, dragNodes: true, zoomView: true, dragView: true },
+            physics: {
+              enabled: true,
+              stabilization: { enabled: true, iterations: 240, fit: true },
+              barnesHut: {
+                gravitationalConstant: -2500,
+                springLength: 160,
+                springConstant: 0.04,
+                damping: 0.35
+              }
+            },
+            nodes: {
+              scaling: {
+                min: 12,
+                max: 40,
+                label: {
+                  enabled: true,
+                  min: 10,
+                  max: 18,
+                  drawThreshold: 4
+                }
+              },
+              font: {
+                size: 14,
+                color: '#111827',
+                strokeWidth: 3,
+                strokeColor: '#ffffff',
+                align: 'horizontal'
+              },
+              borderWidth: 1.5,
+              shadow: true,
+              shadowColor: 'rgba(15, 23, 42, 0.20)',
+              shadowSize: 8,
+              shadowX: 0,
+              shadowY: 0
+            },
+            edges: {
+              color: { inherit: false },
+              smooth: { enabled: true, type: 'continuous' },
+              shadow: false
+            }
+          };
+
+          const network = new vis.Network(document.getElementById('networkGraph'), { nodes: nodesDs, edges: edgesDs }, options);
+          network.once('stabilizationIterationsDone', () => network.setOptions({ physics: false }));
+
+          network.on('click', function (params) {
+            const focusedLabelNodes = params.nodes.length ? params.nodes : [];
+            const nodeList = nodesDs.getIds().map(id => nodesDs.get(id)).filter(Boolean);
+            nodeList.forEach(n => {
+              if (!focusedLabelNodes.length || n.id === params.nodes[0] || (params.nodes.length === 0 && n.label)) {
+                nodesDs.update({
+                  id: n.id,
+                  label: n.originalLabel ? (showFullLabel ? shortLabel(n.originalLabel, 80) : shortLabel(n.originalLabel, 18)) : n.label,
+                  font: { ...n.font, color: '#111827' }
+                });
+              }
+            });
+
+            if (!params.nodes.length) {
+              edgesDs.forEach(e => edgesDs.update({ id: e.id, color: { color: '#7c3aed', opacity: 0.22 }, width: e.width }));
+              nodesDs.forEach(n => nodesDs.update({ id: n.id, font: { ...n.font, color: '#111827' } }));
+              return;
+            }
+            const selectedNode = String(params.nodes[0]);
+
+            const connectedEdgeIds = network.getConnectedEdges(selectedNode);
+            const connectedNodeIds = new Set(network.getConnectedNodes(selectedNode).concat([selectedNode]));
+            edgesDs.forEach(e => {
+              const focused = connectedEdgeIds.includes(e.id);
+              edgesDs.update({
+                id: e.id,
+                color: { color: '#7c3aed', opacity: focused ? 0.95 : 0.06 },
+                width: focused ? 1.7 + Math.min(Number(e.value || 1), 8) * 0.55 : Math.max(1, Number(e.width || 1) * 0.7)
+              });
+            });
+            nodesDs.forEach(n => nodesDs.update({
+              id: n.id,
+              font: { ...n.font, color: connectedNodeIds.has(n.id) ? '#111827' : '#9ca3af' }
+            }));
+          });
+
+          network.on('hoverNode', function (params) {
+            const hovered = nodesDs.get(params.node);
+            if (hovered && hovered.originalLabel) {
+              nodesDs.update({ id: hovered.id, label: shortLabel(hovered.originalLabel, 80), font: { ...hovered.font, size: 18 } });
+            }
+          });
+
+          network.on('blurNode', function () {
+            if (showFullLabel) {
+              nodesDs.forEach(n => {
+                if (n.originalLabel) {
+                  const visible = String(n.id).toLowerCase().includes((searchEl.value || '').trim().toLowerCase())
+                    || !((searchEl.value || '').trim());
+                  if (visible) {
+                    nodesDs.update({ id: n.id, label: shortLabel(n.originalLabel, 18), font: { ...n.font, size: 16 } });
+                  }
+                }
+              });
+            }
+          });
+
+          network.on('doubleClick', function (params) {
+            if (!params.nodes.length) return;
+            const nodeId = String(params.nodes[0]);
+            if (nodeId.includes('/')) {
+              window.open(`https://github.com/${nodeId}`, '_blank', 'noopener');
+            }
+          });
+
+          if (q) {
+            const matched = nodes.filter(n => n.id.toLowerCase().includes(q) || String(n.label).toLowerCase().includes(q)).map(n => n.id);
+            if (matched.length) {
+              network.selectNodes(matched);
+              network.fit({ nodes: matched, animation: { duration: 350 } });
+            }
+          }
+
+          legendEl.innerHTML = '<div class=\"legend-item\"><span class=\"swatch\" style=\"background:#7c3aed\"></span>Repo node</div><div class=\"legend-item\">Edge weight = shared contributor count</div><div class=\"legend-item\">Top ~45% node labels are fixed; others are highlighted on hover/search</div>';
+          return network;
+        }
+
+        let network = null;
+        network = renderGraph();
+        let renderTimer = null;
+
+        const rerenderDebounced = (ms = 250) => {
+          clearTimeout(renderTimer);
+          renderTimer = setTimeout(() => {
+            if (network) network.destroy();
+            network = renderGraph();
+          }, ms);
+        };
+
+        minEdgeEl.addEventListener('change', () => {
+          if (network) network.destroy();
+          network = renderGraph();
+        });
+        searchEl.addEventListener('input', () => rerenderDebounced(350));
+        toggleLabelsBtn.addEventListener('click', () => {
+          showFullLabel = !showFullLabel;
+          if (network) network.destroy();
+          network = renderGraph();
+          toggleLabelsBtn.textContent = showFullLabel ? 'Simplify labels' : 'Show all labels';
+        });
+        refitBtn.addEventListener('click', () => {
+          network.setOptions({ physics: true });
+          network.stabilize(120);
+          setTimeout(() => network.setOptions({ physics: false }), 900);
+        });
+        clearBtn.addEventListener('click', () => {
+          searchEl.value = '';
+          minEdgeEl.value = '1';
+          minEdgeValueEl.textContent = '1';
+          if (network) network.destroy();
+          showFullLabel = true;
+          toggleLabelsBtn.textContent = 'Simplify labels';
+          network = renderGraph();
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+oss_analytics:
+  target: prod
+  outputs:
+    prod:
+      type: bigquery
+      method: service-account
+      project: your-gcp-project-id
+      dataset: oss_analytics_mart
+      keyfile: /path/to/service-account.json
+      location: asia-northeast3
+      threads: 4
+      timeout_seconds: 900
+      priority: batch

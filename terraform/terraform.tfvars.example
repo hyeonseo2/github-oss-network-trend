@@ -1,0 +1,7 @@
+project_id         = "your-gcp-project-id"
+region             = "asia-northeast3"
+environment        = "dev"
+raw_dataset_id     = "oss_analytics_raw"
+mart_dataset_id    = "oss_analytics_mart"
+raw_table_id       = "raw_github_events"
+raw_table_ttl_days = 30

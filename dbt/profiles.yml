@@ -1,0 +1,12 @@
+oss_analytics:
+  target: prod
+  outputs:
+    prod:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT_ID', 'open-claw-project-487803') }}"
+      dataset: oss_analytics_mart
+      location: "{{ env_var('BQ_LOCATION', 'US') }}"
+      threads: 4
+      timeout_seconds: 900
+      priority: interactive

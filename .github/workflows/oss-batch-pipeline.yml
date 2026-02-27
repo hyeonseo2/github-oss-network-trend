@@ -1,0 +1,300 @@
+name: OSS Analytics Batch Pipeline
+
+"on":
+  schedule:
+    - cron: "0 7 * * *" # UTC 07:00 (change as needed)
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "YYYY-MM-DD (optional). If empty, previous day (UTC) is used as base date."
+        required: false
+      backfill_days:
+        description: "Number of previous days to backfill (1~30)."
+        required: false
+        default: "1"
+      skip_quality_gate:
+        description: "Set 1 to skip quality gate failure stopping the run"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      RAW_BUCKET: ${{ secrets.OSS_RAW_BUCKET }}
+      RAW_DATASET: ${{ vars.RAW_DATASET || 'oss_analytics_raw' }}
+      RAW_TABLE: ${{ vars.RAW_TABLE || 'raw_github_events' }}
+      MART_DATASET: ${{ vars.MART_DATASET || 'oss_analytics_mart' }}
+      BQ_LOCATION: ${{ vars.BQ_LOCATION || 'US' }}
+      DBT_TARGET: ${{ vars.DBT_TARGET || 'prod' }}
+      GCP_SA_EMAIL: ${{ secrets.GCP_SA_EMAIL }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set target date
+        id: date
+        run: |
+          if [ -n "${{ github.event.inputs.target_date }}" ]; then
+            TARGET_DATE="${{ github.event.inputs.target_date }}"
+          else
+            TARGET_DATE=$(date -u -d "yesterday" +%Y-%m-%d)
+          fi
+
+          BACKFILL_DAYS="${{ github.event.inputs.backfill_days }}"
+          if [ -z "$BACKFILL_DAYS" ]; then
+            BACKFILL_DAYS="1"
+          fi
+          if ! [[ "$BACKFILL_DAYS" =~ ^[0-9]+$ ]] || [ "$BACKFILL_DAYS" -lt 1 ] || [ "$BACKFILL_DAYS" -gt 30 ]; then
+            echo "Invalid backfill_days: $BACKFILL_DAYS"
+            exit 1
+          fi
+
+          echo "target_date=${TARGET_DATE}" >> "$GITHUB_OUTPUT"
+          echo "backfill_days=${BACKFILL_DAYS}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to GCP (OIDC)
+        if: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SA_EMAIL }}
+
+      - name: Authenticate to GCP (SA Key fallback)
+        if: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER == '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup GCloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Normalize and validate runtime config
+        run: |
+          set -euo pipefail
+
+          GCP_PROJECT_ID="$(printf "%s" "$GCP_PROJECT_ID" | tr -d '[:space:]\r\n')"
+          RAW_BUCKET="$(printf "%s" "$RAW_BUCKET" | tr -d '[:space:]\r\n')"
+          RAW_DATASET="$(printf "%s" "${RAW_DATASET:-oss_analytics_raw}" | tr -d '[:space:]\r\n')"
+          RAW_TABLE="$(printf "%s" "${RAW_TABLE:-raw_github_events}" | tr -d '[:space:]\r\n')"
+          MART_DATASET="$(printf "%s" "${MART_DATASET:-oss_analytics_mart}" | tr -d '[:space:]\r\n')"
+          BQ_LOCATION="$(printf "%s" "$BQ_LOCATION" | tr -d '[:space:]\r\n')"
+          DBT_TARGET="$(printf "%s" "$DBT_TARGET" | tr -d '[:space:]\r\n')"
+
+          if [ -z "$RAW_BUCKET" ] || [ -z "$RAW_DATASET" ] || [ -z "$RAW_TABLE" ] || [ -z "$MART_DATASET" ]; then
+            echo "Missing required config value."
+            exit 1
+          fi
+
+          RUNTIME_PROJECT="$(gcloud config get-value project 2>/dev/null | tr -d '[:space:]\r\n')"
+          if [ -z "$RUNTIME_PROJECT" ]; then
+            echo "Cannot determine gcloud active project."
+            exit 1
+          fi
+
+          if ! [[ "$RUNTIME_PROJECT" =~ ^[a-z][a-z0-9-]{4,61}[a-z0-9]$ ]]; then
+            echo "Invalid runtime project format: '$RUNTIME_PROJECT'"
+            exit 1
+          fi
+          GCP_PROJECT_ID="$RUNTIME_PROJECT"
+
+          if ! [[ "$RAW_DATASET" =~ ^[a-zA-Z_][a-zA-Z0-9_]{0,1023}$ ]] ||
+             ! [[ "$RAW_TABLE" =~ ^[a-zA-Z_][a-zA-Z0-9_]{0,1023}$ ]] ||
+             ! [[ "$MART_DATASET" =~ ^[a-zA-Z_][a-zA-Z0-9_]{0,1023}$ ]]; then
+            echo "Invalid BigQuery identifier detected."
+            exit 1
+          fi
+
+          echo "GCP_PROJECT_ID=$GCP_PROJECT_ID" >> "$GITHUB_ENV"
+          echo "RAW_BUCKET=$RAW_BUCKET" >> "$GITHUB_ENV"
+          echo "RAW_DATASET=$RAW_DATASET" >> "$GITHUB_ENV"
+          echo "RAW_TABLE=$RAW_TABLE" >> "$GITHUB_ENV"
+          echo "MART_DATASET=$MART_DATASET" >> "$GITHUB_ENV"
+          echo "BQ_LOCATION=$BQ_LOCATION" >> "$GITHUB_ENV"
+          echo "DBT_TARGET=$DBT_TARGET" >> "$GITHUB_ENV"
+
+      - name: Setup Python + install dbt
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install DBT packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-core dbt-bigquery==1.8.2
+
+      - name: Prepare raw table
+        run: |
+          set -euo pipefail
+          TABLE_FQN="${GCP_PROJECT_ID}.${RAW_DATASET}.${RAW_TABLE}"
+
+          if ! bq show --project_id "${GCP_PROJECT_ID}" "${GCP_PROJECT_ID}:${RAW_DATASET}" >/dev/null 2>&1; then
+            echo "BigQuery dataset '${RAW_DATASET}' does not exist in project '${GCP_PROJECT_ID}'."
+            exit 1
+          fi
+
+          bq query --project_id "${GCP_PROJECT_ID}" --location "${BQ_LOCATION}" --use_legacy_sql=false <<SQL
+          CREATE TABLE IF NOT EXISTS \`${TABLE_FQN}\` (
+            event_type STRING,
+            repo_name STRING,
+            contributor STRING,
+            created_at TIMESTAMP
+          )
+          PARTITION BY DATE(created_at)
+          CLUSTER BY repo_name
+          SQL
+
+      - name: Export raw events to GCS + Load to BigQuery (backfill loop)
+        id: export_and_load
+        env:
+          TARGET_DATE: ${{ steps.date.outputs.target_date }}
+          BACKFILL_DAYS: ${{ steps.date.outputs.backfill_days }}
+        run: |
+          set -euo pipefail
+
+          RAW_BUCKET="$(printf "%s" "$RAW_BUCKET" | tr -d "[:space:]\r\n")"
+          if [ -z "$RAW_BUCKET" ]; then
+            echo "RAW_BUCKET is empty."
+            exit 1
+          fi
+          if [[ ! "$RAW_BUCKET" =~ ^[a-z0-9][a-z0-9._-]*[a-z0-9]$ ]]; then
+            echo "Invalid GCS bucket name format: '$RAW_BUCKET'"
+            exit 1
+          fi
+
+          if ! gsutil ls "gs://${RAW_BUCKET}" >/dev/null 2>&1; then
+            echo "GCS bucket not accessible: gs://${RAW_BUCKET}"
+            exit 1
+          fi
+
+          for offset in $(seq 0 $((BACKFILL_DAYS-1))); do
+            CURRENT_TARGET_DATE=$(date -u -d "${TARGET_DATE} -${offset} day" +%Y-%m-%d)
+            TARGET_NODASH="${CURRENT_TARGET_DATE//-/}"
+            EXPORT_URI="gs://${RAW_BUCKET}/github_events/dt=${CURRENT_TARGET_DATE}/events-*.jsonl"
+            TABLE_FQN_BQ="${GCP_PROJECT_ID}:${RAW_DATASET}.${RAW_TABLE}"
+
+            echo "Exporting day ${CURRENT_TARGET_DATE}"
+          bq query --project_id "${GCP_PROJECT_ID}" --location "${BQ_LOCATION}" --use_legacy_sql=false <<SQL
+            EXPORT DATA OPTIONS (
+              uri='${EXPORT_URI}',
+              format='JSON',
+              overwrite=true
+            )
+            AS
+            SELECT
+              type AS event_type,
+              repo.name AS repo_name,
+              actor.login AS contributor,
+              created_at
+            FROM \`githubarchive.day.${TARGET_NODASH}\`
+            WHERE type IN ('PushEvent', 'PullRequestEvent', 'IssuesEvent')
+          SQL
+
+            MATCHING_FILES=$(mktemp)
+            if ! gsutil ls "$EXPORT_URI" >"$MATCHING_FILES"; then
+              echo "No files matched export URI: $EXPORT_URI"
+              echo "This usually means export produced no rows or bucket/prefix is wrong."
+              echo "Exported URI: $EXPORT_URI"
+              rm -f "$MATCHING_FILES"
+              continue
+            fi
+            if [ ! -s "$MATCHING_FILES" ]; then
+              echo "No rows exported to $EXPORT_URI"
+              rm -f "$MATCHING_FILES"
+              continue
+            fi
+            rm -f "$MATCHING_FILES"
+
+            bq load --source_format=NEWLINE_DELIMITED_JSON \
+              --autodetect=false \
+              --ignore_unknown_values=true \
+              --location "${BQ_LOCATION}" \
+              "${TABLE_FQN_BQ}" \
+              "${EXPORT_URI}" \
+              event_type:STRING,repo_name:STRING,contributor:STRING,created_at:TIMESTAMP
+
+            echo "Loaded ${CURRENT_TARGET_DATE}"
+          done
+
+      - name: Run DBT transform
+        run: |
+          set -euo pipefail
+          cd dbt
+          dbt run --project-dir . --profiles-dir . --target "${DBT_TARGET}" \
+            --vars "{\"gcp_project_id\":\"${GCP_PROJECT_ID}\",\"raw_dataset\":\"${RAW_DATASET}\",\"raw_table\":\"${RAW_TABLE}\",\"analysis_window_days\":30,\"network_window_days\":30,\"min_daily_events_for_trend\":5}"
+
+      - name: Run DBT tests (quality)
+        run: |
+          set -euo pipefail
+          cd dbt
+          dbt test --project-dir . --profiles-dir . --target "${DBT_TARGET}" \
+            --vars "{\"gcp_project_id\":\"${GCP_PROJECT_ID}\",\"raw_dataset\":\"${RAW_DATASET}\",\"raw_table\":\"${RAW_TABLE}\"}"
+
+      - name: Data quality pre-check (row drop threshold)
+        id: quality
+        env:
+          TARGET_DATE: ${{ steps.date.outputs.target_date }}
+          SKIP_QUALITY_GATE: ${{ github.event.inputs.skip_quality_gate }}
+        run: |
+          set -euo pipefail
+          RESULT=$(bq query --project_id "${GCP_PROJECT_ID}" --location "${BQ_LOCATION}" --use_legacy_sql=false --format=csv "WITH params AS ( SELECT DATE('${TARGET_DATE}') AS target_date ), latest AS ( SELECT DATE(created_at) AS dt, COUNT(*) AS row_count, COUNTIF(event_type IS NULL OR repo_name IS NULL OR created_at IS NULL) AS null_count FROM \`${GCP_PROJECT_ID}.${RAW_DATASET}.${RAW_TABLE}\` WHERE DATE(created_at) = (SELECT target_date FROM params) GROUP BY 1 ), previous AS ( SELECT COUNT(*) AS prev_row_count FROM \`${GCP_PROJECT_ID}.${RAW_DATASET}.${RAW_TABLE}\` WHERE DATE(created_at) = DATE_SUB((SELECT target_date FROM params), INTERVAL 1 DAY) ) SELECT IFNULL((SELECT row_count FROM latest),0) > 0 AS has_rows, IFNULL(SAFE_DIVIDE((SELECT null_count FROM latest), NULLIF((SELECT row_count FROM latest),0)),0) < 0.01 AS null_rate_under_1pct, IFNULL(SAFE_DIVIDE((SELECT prev_row_count FROM previous) - (SELECT row_count FROM latest), NULLIF((SELECT prev_row_count FROM previous), 0)), 0) < 0.30 AS row_drop_under_30pct;" )
+          echo "Quality result: $RESULT"
+          if [[ "$RESULT" != "has_rows,null_rate_under_1pct,row_drop_under_30pct"* ]]; then
+            echo "query output invalid"
+            exit 1
+          fi
+          if [[ "$RESULT" == *",false"* ]]; then
+            if [ "${SKIP_QUALITY_GATE}" = "1" ]; then
+              echo "Quality gate failed but skipped by input."
+            else
+              echo "Quality gate failed." && exit 1
+            fi
+          fi
+
+      - name: Write pipeline status
+        if: always()
+        env:
+          TARGET_DATE: ${{ steps.date.outputs.target_date }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TABLE_FQN="${GCP_PROJECT_ID}.${MART_DATASET}.pipeline_runs"
+          STATE="${{ job.status }}"
+          ROWS=$(bq query --project_id "${GCP_PROJECT_ID}" --location "${BQ_LOCATION}" --use_legacy_sql=false --format=csv "SELECT COUNT(*) FROM \`${GCP_PROJECT_ID}.${RAW_DATASET}.${RAW_TABLE}\` WHERE DATE(created_at)=DATE('${TARGET_DATE}')")
+          ROWS_VALUE=$(echo "$ROWS" | tail -n 1)
+
+          bq query --project_id "${GCP_PROJECT_ID}" --location "${BQ_LOCATION}" --use_legacy_sql=false <<SQL
+          CREATE TABLE IF NOT EXISTS \`${TABLE_FQN}\` (
+            run_id STRING NOT NULL,
+            dag_id STRING NOT NULL,
+            dag_run_id STRING NOT NULL,
+            run_started_at TIMESTAMP NOT NULL,
+            executed_for_date DATE,
+            status STRING NOT NULL,
+            raw_events_rows INT64,
+            created_at TIMESTAMP NOT NULL
+          )
+          PARTITION BY DATE(run_started_at)
+          CLUSTER BY dag_id, status;
+
+          INSERT INTO \`${TABLE_FQN}\` (
+            run_id, dag_id, dag_run_id, run_started_at,
+            executed_for_date, status, raw_events_rows, created_at
+          )
+          SELECT
+            "${RUN_ID}" AS run_id,
+            "github_oss_batch_pipeline" AS dag_id,
+            "manual__${RUN_ID}" AS dag_run_id,
+            CURRENT_TIMESTAMP() AS run_started_at,
+            DATE("${TARGET_DATE}") AS executed_for_date,
+            "${STATE}" AS status,
+            CAST("${ROWS_VALUE}" AS INT64) AS raw_events_rows,
+            CURRENT_TIMESTAMP() AS created_at;
+          SQL

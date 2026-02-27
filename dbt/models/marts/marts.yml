@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: mart_repo_trend
+    description: "Repository trend mart with rolling baseline and trend ratio"
+    columns:
+      - name: activity_date
+        tests:
+          - not_null
+      - name: repo_name
+        tests:
+          - not_null
+
+  - name: mart_contributor_edges
+    description: "Contributor collaboration edge list"
+    columns:
+      - name: source_repo
+        tests:
+          - not_null
+      - name: target_repo
+        tests:
+          - not_null
+      - name: shared_contributor_count
+        tests:
+          - not_null
+      - name: window_days
+      - name: min_shared_repo_threshold
+      - name: snapshot_date
+
+  - name: mart_repo_popularity_snapshots
+    description: "Daily repository snapshots for rolling totals"
+    columns:
+      - name: snapshot_date
+        tests:
+          - not_null
+      - name: repo_name
+        tests:
+          - not_null
+      - name: event_total_30d
+        tests:
+          - not_null
+      - name: active_contributor_count
+        tests:
+          - not_null

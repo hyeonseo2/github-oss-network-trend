@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: int_repo_daily_activity
+    description: "Daily event counts per repository"
+    columns:
+      - name: activity_date
+        tests:
+          - not_null
+      - name: repo_name
+        tests:
+          - not_null
+      - name: total_events
+        tests:
+          - not_null
+    tests:
+      - row_count_drop_below:
+          date_column: activity_date
+          value_column: total_events
+          max_drop_ratio: 1.0
+          config:
+            severity: warn
+
+  - name: int_contributor_repo
+    description: "Repository-contributor aggregate"
+    columns:
+      - name: repo_name
+        tests:
+          - not_null
+      - name: contributor
+        tests:
+          - not_null
