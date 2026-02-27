@@ -2,9 +2,29 @@
 
 [English](./README.md) | [한국어](./README.ko.md)
 
-이 프로젝트는 GitHub 공개 이벤트 데이터를 기반으로 저장소 성장 추세와 저장소 간 협업 연결망을 분석하는 엔드투엔드 데이터 파이프라인입니다.
+GitHub 공개 이벤트를 기반으로 저장소 성장 추세(Trend)와 저장소 간 기여자 네트워크(Network)를 분석하는 엔드투엔드 분석 프로젝트입니다.
 
-GitHub Actions로 매일 배치를 수행하고, dbt로 BigQuery에서 분석 마트를 구성해 Cloud Run의 Flask 대시보드로 제공합니다.
+이 프로젝트는 GitHub Actions 기반 일일 배치 파이프라인으로 동작하며, BigQuery의 dbt로 이벤트 기반 집계를 수행하고 Cloud Run의 Flask 대시보드에서 인사이트를 제공합니다.
+
+🔗 **라이브 데모:** https://oss-analytics-dashboard-415500942280.us-central1.run.app/  
+🧩 **저장소:** https://github.com/hyeonseo2/github-oss-network-trend
+
+![트렌드 뷰](./assets/demo/oss-network-trend-dashboard-trend.png)
+
+![네트워크 뷰](./assets/demo/oss-network-trend-dashboard-network.png)
+
+## 빠른 링크
+
+- 🚀 [라이브 대시보드](https://oss-analytics-dashboard-415500942280.us-central1.run.app/)
+- 🧪 [DE Zoomcamp 프로젝트 문서](docs/de_zoomcamp_project_document.md)
+- ☁️ [Cloud Run 배포 가이드](docs/cloud_run_deploy.md)
+
+## 한눈에 보기
+
+- **기본 뷰:** 30일 윈도우, 네트워크 ON
+- **대시보드:** 2개 핵심 타일 (Trend, Network)
+- **파이프라인:** GitHub Actions (일일) + dbt + BigQuery
+- **배포:** Google Cloud Run
 
 ## 1. 개요
 
