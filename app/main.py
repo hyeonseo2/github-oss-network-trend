@@ -34,7 +34,9 @@ TOP_TREND = int(os.getenv("TOP_TREND", "40"))
 TREND_WINDOW_DAYS = int(os.getenv("TREND_WINDOW_DAYS", "30"))
 DEFAULT_WINDOW_DAYS = TREND_WINDOW_DAYS
 CACHE_TTL_SECONDS = int(os.getenv("DASHBOARD_CACHE_TTL_SECONDS", "43200"))
+_QUERY_CACHE_TTL_SECONDS = int(os.getenv("QUERY_CACHE_TTL_SECONDS", "300"))
 _DASHBOARD_CACHE: dict[str, tuple[datetime, dict[str, Any]]] = {}
+_QUERY_CACHE: dict[str, tuple[datetime, Any]] = {}
 _CACHE_LOCK = threading.Lock()
 
 
@@ -53,6 +55,23 @@ def _cache_get(key: str) -> dict[str, Any] | None:
 def _cache_set(key: str, value: dict[str, Any]) -> None:
     with _CACHE_LOCK:
         _DASHBOARD_CACHE[key] = (datetime.utcnow(), value)
+
+
+def _query_cache_get(key: str) -> Any | None:
+    with _CACHE_LOCK:
+        entry = _QUERY_CACHE.get(key)
+        if not entry:
+            return None
+        exp, value = entry
+        if (datetime.utcnow() - exp).total_seconds() > _QUERY_CACHE_TTL_SECONDS:
+            _QUERY_CACHE.pop(key, None)
+            return None
+        return value
+
+
+def _query_cache_set(key: str, value: Any) -> None:
+    with _CACHE_LOCK:
+        _QUERY_CACHE[key] = (datetime.utcnow(), value)
 
 
 def _dashboard_cache_key(window_days: int, trend_mode: str, include_network: bool, project_id: str) -> str:
@@ -142,6 +161,16 @@ def github_request_json(url: str, params: dict[str, Any]) -> dict[str, Any] | No
 
 
 def search_popular_repos(window_days: int, mode: str = "trending") -> list[dict[str, Any]]:
+    """Load candidate repos via GitHub Search API with short-lived cache.
+
+    This keeps the UI-visible candidate set identical while avoiding repeated
+    network calls for the same window/mode.
+    """
+    cache_key = f"search_popular_repos:{mode}:{window_days}"
+    cached = _query_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     now = datetime.utcnow().date()
     since = (now - timedelta(days=window_days)).isoformat()
 
@@ -185,7 +214,7 @@ def search_popular_repos(window_days: int, mode: str = "trending") -> list[dict[
                 if name not in rows:
                     rows[name] = {
                         "repo_name": name,
-                        # event-based baseline values are filled after BigQuery delta enrichment
+                        # event-based baseline values are filled after BigQuery enrichment
                         "stars_total": 0,
                         "forks_total": 0,
                         "last_activity_date": str((it.get("pushed_at") or "")[:10]),
@@ -203,237 +232,167 @@ def search_popular_repos(window_days: int, mode: str = "trending") -> list[dict[
         ]
         results = fetch(fallback_queries)
 
-    return results[:TREND_LIMIT]
+    results = results[:TREND_LIMIT]
+    _query_cache_set(cache_key, results)
+    return results
 
 
 
+def fetch_repo_trend_metrics(client: bigquery.Client, repos: list[dict[str, Any]], window_days: int) -> list[dict[str, Any]]:
+    """Attach all trend/event/co-contributor metrics in one BigQuery pass.
 
-
-def attach_star_fork_deltas(client: bigquery.Client, repos: list[dict[str, Any]], window_days: int) -> list[dict[str, Any]]:
-    """Attach trend-style deltas for dashboard metrics.
-
-    NOTE: These are activity-based metrics derived from events in the mart,
-    not GitHub star/fork counts. The display labels are intentionally normalized
-    in the caller/template to avoid metric confusion.
+    This preserves existing dashboard fields while reducing query round-trips.
     """
     if not repos:
         return []
 
     names = [str(r["repo_name"]) for r in repos if REPO_NAME.match(str(r.get("repo_name", "")))]
     if not names:
-        return repos
+        return []
 
     repo_list = _repo_in_clause(names)
+    if repo_list == "CAST([] AS ARRAY<STRING>)":
+        return []
+
     analysis_end = "DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)"
     curr_start = f"DATE_SUB({analysis_end}, INTERVAL {window_days} DAY)"
     prev_start = f"DATE_SUB({analysis_end}, INTERVAL {window_days * 2} DAY)"
     prev_end = f"DATE_SUB({analysis_end}, INTERVAL {window_days} DAY)"
 
-    delta_sql = f"""
-    WITH target AS (
+    query = f"""
+    WITH target_repos AS (
       SELECT repo_name FROM UNNEST({repo_list}) AS repo_name
     ),
-    curr_window AS (
+    trend_daily AS (
+      SELECT
+        a.repo_name,
+        a.activity_date,
+        a.total_events
+      FROM {_int_repo_daily_activity_table()} a
+      JOIN target_repos t ON t.repo_name = a.repo_name
+      WHERE a.activity_date BETWEEN {prev_start} AND {analysis_end}
+    ),
+    trend_contrib AS (
+      SELECT
+        s.repo_name,
+        s.activity_date,
+        s.contributor
+      FROM {_stg_github_events_table()} s
+      JOIN target_repos t ON t.repo_name = s.repo_name
+      WHERE s.activity_date BETWEEN {prev_start} AND {analysis_end}
+        AND s.contributor IS NOT NULL
+    ),
+    trend_agg AS (
       SELECT
         repo_name,
-        SUM(COALESCE(total_events, 0)) AS curr_events
-      FROM {_int_repo_daily_activity_table()}
-      WHERE activity_date BETWEEN {curr_start} AND {analysis_end}
-        AND repo_name IN (SELECT repo_name FROM target)
+        SUM(IF(activity_date BETWEEN {curr_start} AND {analysis_end}, total_events, 0)) AS curr_events,
+        SUM(IF(activity_date BETWEEN {prev_start} AND {prev_end}, total_events, 0)) AS prev_events
+      FROM trend_daily
       GROUP BY repo_name
     ),
-    prev_window AS (
+    contrib_agg AS (
       SELECT
         repo_name,
-        SUM(COALESCE(total_events, 0)) AS prev_events
-      FROM {_int_repo_daily_activity_table()}
-      WHERE activity_date BETWEEN {prev_start} AND {prev_end}
-        AND repo_name IN (SELECT repo_name FROM target)
-      GROUP BY repo_name
-    ),
-    curr_contrib AS (
-      SELECT
-        repo_name,
-        COUNT(DISTINCT contributor) AS curr_contributors
-      FROM {_stg_github_events_table()}
-      WHERE activity_date BETWEEN {curr_start} AND {analysis_end}
-        AND repo_name IN (SELECT repo_name FROM target)
-      GROUP BY repo_name
-    ),
-    prev_contrib AS (
-      SELECT
-        repo_name,
-        COUNT(DISTINCT contributor) AS prev_contributors
-      FROM {_stg_github_events_table()}
-      WHERE activity_date BETWEEN {prev_start} AND {prev_end}
-        AND repo_name IN (SELECT repo_name FROM target)
+        COUNT(DISTINCT IF(activity_date BETWEEN {curr_start} AND {analysis_end}, contributor, NULL)) AS curr_contributors,
+        COUNT(DISTINCT IF(activity_date BETWEEN {prev_start} AND {prev_end}, contributor, NULL)) AS prev_contributors,
+        COUNT(DISTINCT IF(activity_date BETWEEN {curr_start} AND {analysis_end} AND NOT REGEXP_CONTAINS(LOWER(contributor), r'{BLACKLIST_REGEX}'), contributor, NULL)) AS curr_user_contributors,
+        COUNT(DISTINCT IF(activity_date BETWEEN {prev_start} AND {prev_end} AND NOT REGEXP_CONTAINS(LOWER(contributor), r'{BLACKLIST_REGEX}'), contributor, NULL)) AS prev_user_contributors
+      FROM trend_contrib
       GROUP BY repo_name
     )
     SELECT
       t.repo_name,
-      IFNULL(cw.curr_events, 0) AS curr_events,
-      IFNULL(pw.prev_events, 0) AS prev_events,
-      IFNULL(cn.curr_contributors, 0) AS curr_contributors,
-      IFNULL(pn.prev_contributors, 0) AS prev_contributors,
-      IFNULL(cw.curr_events, 0) - IFNULL(pw.prev_events, 0) AS activity_delta_window,
-      IFNULL(cn.curr_contributors, 0) - IFNULL(pn.prev_contributors, 0) AS contributors_delta_window
-    FROM target t
-    LEFT JOIN curr_window cw USING (repo_name)
-    LEFT JOIN prev_window pw USING (repo_name)
-    LEFT JOIN curr_contrib cn USING (repo_name)
-    LEFT JOIN prev_contrib pn USING (repo_name)
+      CAST(IFNULL(a.curr_events, 0) AS INT64) AS curr_events,
+      CAST(IFNULL(a.prev_events, 0) AS INT64) AS prev_events,
+      CAST(IFNULL(c.curr_contributors, 0) AS INT64) AS curr_contributors,
+      CAST(IFNULL(c.prev_contributors, 0) AS INT64) AS prev_contributors,
+      CAST(IFNULL(c.curr_user_contributors, 0) AS INT64) AS curr_user_contributors,
+      CAST(IFNULL(c.prev_user_contributors, 0) AS INT64) AS prev_user_contributors,
+      CAST(IFNULL(a.curr_events, 0) - IFNULL(a.prev_events, 0) AS INT64) AS activity_delta_window,
+      CAST(IFNULL(c.curr_contributors, 0) - IFNULL(c.prev_contributors, 0) AS INT64) AS contributors_delta_window
+    FROM target_repos t
+    LEFT JOIN trend_agg a USING (repo_name)
+    LEFT JOIN contrib_agg c USING (repo_name)
     """
 
-    try:
-        rows = run_query(client, delta_sql, location=BQ_LOCATION)
-        map_rows = {
-            str(r["repo_name"]): {
-                "stars_total": int(r.get("curr_events", 0) or 0),
-                "forks_total": int(r.get("curr_contributors", 0) or 0),
-                "activity_delta_window": int(r.get("activity_delta_window", 0) or 0),
-                "contributors_delta_window": int(r.get("contributors_delta_window", 0) or 0),
-                "stars_delta_window": int(r.get("activity_delta_window", 0) or 0),
-                "forks_delta_window": int(r.get("contributors_delta_window", 0) or 0),
-                "has_baseline": (int(r.get("curr_events", 0) or 0) + int(r.get("curr_contributors", 0) or 0) > 0)
-                or (int(r.get("prev_events", 0) or 0) + int(r.get("prev_contributors", 0) or 0) > 0),
-                "has_exact_baseline": (int(r.get("curr_events", 0) or 0) + int(r.get("curr_contributors", 0) or 0) > 0)
-                and (int(r.get("prev_events", 0) or 0) + int(r.get("prev_contributors", 0) or 0) > 0),
-            }
-            for r in rows
-        }
-    except Exception:
-        map_rows = {}
+    rows = run_query(client, query, location=BQ_LOCATION)
+    by_repo = {str(r["repo_name"]): r for r in rows}
 
     out: list[dict[str, Any]] = []
     for r in repos:
         repo_name = str(r.get("repo_name", ""))
         base = {
             "repo_name": repo_name,
-            "stars_total": int(r.get("stars_total", 0) or 0),
-            "forks_total": int(r.get("forks_total", 0) or 0),
+            "stars_total": 0,
+            "forks_total": 0,
             "activity_delta_window": 0,
             "contributors_delta_window": 0,
             "stars_delta_window": 0,
             "forks_delta_window": 0,
+            "event_delta": 0,
+            "contributor_delta": 0,
+            "curr_event_count": 0,
+            "prev_event_count": 0,
+            "curr_contributor_count": 0,
+            "prev_contributor_count": 0,
             "last_activity_date": str(r.get("last_activity_date", "")),
             "has_baseline": False,
             "has_exact_baseline": False,
         }
-        if repo_name in map_rows:
-            base.update(map_rows[repo_name])
+        row = by_repo.get(repo_name)
+        if row:
+            curr_events = int(row.get("curr_events", 0) or 0)
+            prev_events = int(row.get("prev_events", 0) or 0)
+            curr_contributors = int(row.get("curr_contributors", 0) or 0)
+            prev_contributors = int(row.get("prev_contributors", 0) or 0)
+            curr_user_contributors = int(row.get("curr_user_contributors", 0) or 0)
+            prev_user_contributors = int(row.get("prev_user_contributors", 0) or 0)
+            activity_delta = int(row.get("activity_delta_window", 0) or 0)
+            contributors_delta = int(row.get("contributors_delta_window", 0) or 0)
+
+            base.update(
+                {
+                    "stars_total": curr_events,
+                    "forks_total": curr_contributors,
+                    "activity_delta_window": activity_delta,
+                    "contributors_delta_window": contributors_delta,
+                    "stars_delta_window": activity_delta,
+                    "forks_delta_window": contributors_delta,
+                    "event_delta": activity_delta,
+                    "contributor_delta": contributors_delta,
+                    "curr_event_count": curr_events,
+                    "prev_event_count": prev_events,
+                    "curr_contributor_count": curr_user_contributors,
+                    "prev_contributor_count": prev_user_contributors,
+                    "has_baseline": (curr_events + curr_contributors > 0) or (prev_events + prev_contributors > 0),
+                    "has_exact_baseline": (curr_events + curr_contributors > 0) and (prev_events + prev_contributors > 0),
+                }
+            )
         out.append(base)
     return out
 
 
-def attach_user_event_deltas(client: bigquery.Client, repos: list[dict[str, Any]], window_days: int) -> list[dict[str, Any]]:
-    if not repos:
+
+def build_edge_chart_rows(edge_rows: list[dict[str, Any]], top_n: int = 15) -> list[dict[str, Any]]:
+    if not edge_rows:
         return []
 
-    names = [str(r["repo_name"]) for r in repos if REPO_NAME.match(str(r.get("repo_name", "")))]
-    if not names:
-        return []
+    degree: dict[str, int] = {}
+    for r in edge_rows:
+        source = str(r.get("source_repo", "")).strip()
+        target = str(r.get("target_repo", "")).strip()
+        shared = int(r.get("shared_contributor_count") or 0)
+        if source:
+            degree[source] = degree.get(source, 0) + shared
+        if target:
+            degree[target] = degree.get(target, 0) + shared
 
-    repo_list = _repo_in_clause(names)
-    if repo_list == "[]":
-        return []
+    return [
+        {"repo_name": k, "degree": v}
+        for k, v in sorted(degree.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[:top_n]
+    ]
 
-    analysis_end = "DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)"
-    curr_start = f"DATE_SUB({analysis_end}, INTERVAL {window_days} DAY)"
-    prev_start = f"DATE_SUB({analysis_end}, INTERVAL {window_days * 2} DAY)"
-    prev_end = f"DATE_SUB({analysis_end}, INTERVAL {window_days} DAY)"
 
-    event_sql = f"""
-    WITH target_repos AS (
-      SELECT repo_name FROM UNNEST({repo_list}) AS repo_name
-    ),
-    curr AS (
-      SELECT
-        repo_name,
-        SUM(total_events) AS event_count
-      FROM {_int_repo_daily_activity_table()}
-      JOIN target_repos USING (repo_name)
-      WHERE activity_date BETWEEN {curr_start}
-        AND {analysis_end}
-      GROUP BY repo_name
-    ),
-    prev AS (
-      SELECT
-        repo_name,
-        SUM(total_events) AS event_count
-      FROM {_int_repo_daily_activity_table()}
-      JOIN target_repos USING (repo_name)
-      WHERE activity_date BETWEEN {prev_start}
-        AND {prev_end}
-      GROUP BY repo_name
-    ),
-    curr_contrib AS (
-      SELECT
-        repo_name,
-        COUNT(DISTINCT contributor) AS contributor_count
-      FROM {_stg_github_events_table()}
-      JOIN target_repos USING (repo_name)
-      WHERE activity_date BETWEEN {curr_start}
-        AND {analysis_end}
-        AND contributor IS NOT NULL
-        AND NOT REGEXP_CONTAINS(LOWER(contributor), r'{BLACKLIST_REGEX}')
-      GROUP BY repo_name
-    ),
-    prev_contrib AS (
-      SELECT
-        repo_name,
-        COUNT(DISTINCT contributor) AS contributor_count
-      FROM {_stg_github_events_table()}
-      JOIN target_repos USING (repo_name)
-      WHERE activity_date BETWEEN {prev_start}
-        AND {prev_end}
-        AND contributor IS NOT NULL
-        AND NOT REGEXP_CONTAINS(LOWER(contributor), r'{BLACKLIST_REGEX}')
-      GROUP BY repo_name
-    )
-    SELECT
-      tr.repo_name,
-      IFNULL(c.event_count, 0) AS curr_event_count,
-      IFNULL(p.event_count, 0) AS prev_event_count,
-      IFNULL(cc.contributor_count, 0) AS curr_contributor_count,
-      IFNULL(pc.contributor_count, 0) AS prev_contributor_count,
-      IFNULL(c.event_count, 0) - IFNULL(p.event_count, 0) AS event_delta,
-      IFNULL(cc.contributor_count, 0) - IFNULL(pc.contributor_count, 0) AS contributor_delta
-    FROM target_repos tr
-    LEFT JOIN curr c USING (repo_name)
-    LEFT JOIN prev p USING (repo_name)
-    LEFT JOIN curr_contrib cc USING (repo_name)
-    LEFT JOIN prev_contrib pc USING (repo_name)
-    """
-
-    rows = run_query(client, event_sql, location=BQ_LOCATION)
-    row_map = {
-        str(r["repo_name"]): {
-            "event_delta": int(r.get("event_delta", 0) or 0),
-            "contributor_delta": int(r.get("contributor_delta", 0) or 0),
-            "curr_event_count": int(r.get("curr_event_count", 0) or 0),
-            "prev_event_count": int(r.get("prev_event_count", 0) or 0),
-            "curr_contributor_count": int(r.get("curr_contributor_count", 0) or 0),
-            "prev_contributor_count": int(r.get("prev_contributor_count", 0) or 0),
-        }
-        for r in rows
-    }
-
-    out: list[dict[str, Any]] = []
-    for r in repos:
-        repo_name = str(r.get("repo_name", ""))
-        stats = row_map.get(
-            repo_name,
-            {
-                "event_delta": 0,
-                "contributor_delta": 0,
-                "curr_event_count": 0,
-                "prev_event_count": 0,
-                "curr_contributor_count": 0,
-                "prev_contributor_count": 0,
-            },
-        )
-        out.append({"repo_name": repo_name, **stats})
-    return out
 
 
 def fetch_pipeline_status(client: bigquery.Client) -> dict[str, Any] | None:
@@ -469,7 +428,7 @@ def fetch_repo_relation_edges(client: bigquery.Client, repo_names: list[str], wi
     if not repo_names:
         return []
     repo_list = _repo_in_clause(repo_names)
-    if repo_list == "[]":
+    if repo_list == "CAST([] AS ARRAY<STRING>)":
         return []
 
     # Build repo-to-repo edges from staged events for selected repos (window-aware).
@@ -509,55 +468,6 @@ def fetch_repo_relation_edges(client: bigquery.Client, repo_names: list[str], wi
     LIMIT 400
     """
     return run_query(client, stg_sql, location=BQ_LOCATION)
-
-def fetch_edge_chart_rows(client: bigquery.Client, repo_names: list[str], window_days: int, top_n: int = 15) -> list[dict[str, Any]]:
-    if not repo_names:
-        return []
-    repo_list = _repo_in_clause(repo_names)
-    if repo_list == "[]":
-        return []
-
-    stg_sql = f"""
-    WITH target_repos AS (
-      SELECT repo_name
-      FROM UNNEST({repo_list}) AS repo_name
-    ),
-    repo_contributors AS (
-      SELECT DISTINCT
-        s.repo_name,
-        s.contributor
-      FROM {_stg_github_events_table()} s
-      JOIN target_repos tr ON s.repo_name = tr.repo_name
-      WHERE s.contributor IS NOT NULL
-        AND s.activity_date BETWEEN DATE_SUB(DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), INTERVAL {window_days} DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
-        AND NOT REGEXP_CONTAINS(LOWER(s.contributor), r'{BLACKLIST_REGEX}')
-    ),
-    paired AS (
-      SELECT
-        a.repo_name AS source_repo,
-        b.repo_name AS target_repo,
-        COUNT(DISTINCT a.contributor) AS shared_contributor_count
-      FROM repo_contributors a
-      JOIN repo_contributors b
-        ON a.contributor = b.contributor
-       AND a.repo_name < b.repo_name
-      GROUP BY 1, 2
-    ),
-    exploded AS (
-      SELECT source_repo AS repo_name, shared_contributor_count FROM paired
-      UNION ALL
-      SELECT target_repo AS repo_name, shared_contributor_count FROM paired
-    )
-    SELECT
-      repo_name,
-      SUM(shared_contributor_count) AS degree
-    FROM exploded
-    GROUP BY repo_name
-    ORDER BY degree DESC
-    LIMIT {top_n}
-    """
-    return run_query(client, stg_sql, location=BQ_LOCATION)
-
 
 def build_trend_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     cleaned: list[dict[str, Any]] = []
@@ -657,19 +567,19 @@ def index():
                 if not repos:
                     trend_error = "No popular repositories found for this window/mode."
                 else:
-                    trend_with_delta = attach_star_fork_deltas(client, repos, window_days)
-                    exact_baseline_count = sum(1 for r in trend_with_delta if r.get("has_exact_baseline", False))
-                    baseline_count = sum(1 for r in trend_with_delta if r.get("has_baseline", False))
-                    trend_rows, trend_chart_rows = build_trend_rows(trend_with_delta)
+                    trend_rows = fetch_repo_trend_metrics(client, repos, window_days)
+                    exact_baseline_count = sum(1 for r in trend_rows if r.get("has_exact_baseline", False))
+                    baseline_count = sum(1 for r in trend_rows if r.get("has_baseline", False))
+                    trend_rows, trend_chart_rows = build_trend_rows(trend_rows)
 
-                    user_event_rows = attach_user_event_deltas(client, trend_rows, window_days)
+                    user_event_rows = trend_rows
                     user_event_chart_rows = user_event_rows
 
                     if include_network:
                         repo_names = [r["repo_name"] for r in trend_rows if r.get("repo_name")]
                         try:
                             edge_rows = fetch_repo_relation_edges(client, repo_names, window_days, 1)
-                            edge_chart_rows = fetch_edge_chart_rows(client, repo_names, window_days, 15)
+                            edge_chart_rows = build_edge_chart_rows(edge_rows)
                             edge_graph_rows = edge_rows
                         except Exception as e:
                             edge_error = f"edge query failed: {e}"
