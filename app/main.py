@@ -506,7 +506,7 @@ def _bq_string_array(values: list[str]) -> str:
 def index():
     # For first-load consistency, keep default window on 30D
     if request.args.get("window") is None:
-        return redirect(url_for("index", window=30, trend_mode="trending", network=request.args.get("network", "1")))
+        return redirect(url_for("index", window=30, trend_mode="trending", network=request.args.get("network", "0")))
 
     allowed_window_days = {7, 14, 30}
     requested_window_days = _safe_int(request.args.get("window"), DEFAULT_WINDOW_DAYS, 1, 365)
@@ -514,7 +514,7 @@ def index():
     # This UI keeps trend mode fixed to Trending only.
     trend_mode = "trending"
 
-    include_network = request.args.get("network", "1") not in {"0", "false", "False", "off", "no", "0"}
+    include_network = request.args.get("network", "0") not in {"0", "false", "False", "off", "no", "0"}
 
     trend_rows: list[dict[str, Any]] = []
     trend_chart_rows: list[dict[str, Any]] = []

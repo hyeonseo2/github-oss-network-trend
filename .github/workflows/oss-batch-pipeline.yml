@@ -228,6 +228,7 @@ jobs:
           set -euo pipefail
           cd dbt
           dbt run --project-dir . --profiles-dir . --target "${DBT_TARGET}" \
+            --select stg_github_events int_repo_daily_activity int_contributor_repo mart_repo_popularity_snapshots mart_repo_trend mart_contributor_edges \
             --vars "{\"gcp_project_id\":\"${GCP_PROJECT_ID}\",\"raw_dataset\":\"${RAW_DATASET}\",\"raw_table\":\"${RAW_TABLE}\",\"analysis_window_days\":30,\"network_window_days\":30,\"min_daily_events_for_trend\":5}"
 
       - name: Run DBT tests (quality)
@@ -235,6 +236,7 @@ jobs:
           set -euo pipefail
           cd dbt
           dbt test --project-dir . --profiles-dir . --target "${DBT_TARGET}" \
+            --select stg_github_events int_repo_daily_activity int_contributor_repo mart_repo_popularity_snapshots mart_repo_trend mart_contributor_edges \
             --vars "{\"gcp_project_id\":\"${GCP_PROJECT_ID}\",\"raw_dataset\":\"${RAW_DATASET}\",\"raw_table\":\"${RAW_TABLE}\"}"
 
       - name: Data quality pre-check (row drop threshold)
