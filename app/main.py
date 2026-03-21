@@ -17,7 +17,7 @@ from google.cloud import bigquery
 
 app = Flask(__name__)
 
-BLACKLIST_PATTERN = re.compile(r"(copilot|claude|codex)", re.IGNORECASE)
+BLACKLIST_PATTERN = re.compile(r"(copilot|claude|codex|github-actions\[bot\])", re.IGNORECASE)
 BLACKLIST_REGEX = BLACKLIST_PATTERN.pattern
 REPO_NAME = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
