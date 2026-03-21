@@ -37,13 +37,14 @@ You can expose the Cloud Run dashboard with a cleaner URL using Vercel (no backe
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/",
       "destination": "https://<YOUR_CLOUD_RUN_URL>"
+    },
+    {
+      "source": "/:path*",
+      "destination": "https://<YOUR_CLOUD_RUN_URL>:path*"
     }
   ]
 }
 ```
-
-
----
 
