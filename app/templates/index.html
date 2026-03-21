@@ -383,18 +383,10 @@
 
       <div class="controls-top">
         <div></div>
-        <div>
-          <div class="filters" role="group" aria-label="Aggregation window">
-            <span class="chip">Window</span>
-            <a href="/?window=7&trend_mode=trending&network={{ 1 if include_network else 0 }}" class="filter-pill{% if window_days == 7 %} active{% endif %}">7D</a>
-            <a href="/?window=14&trend_mode=trending&network={{ 1 if include_network else 0 }}" class="filter-pill{% if window_days == 14 %} active{% endif %}">14D</a>
-            <a href="/?window=30&trend_mode=trending&network={{ 1 if include_network else 0 }}" class="filter-pill{% if window_days == 30 %} active{% endif %}">30D</a>
-          </div>
-          <div class="filters" role="group" aria-label="Network toggle">
-            <span class="chip">Network</span>
-            <a href="/?window={{ window_days }}&trend_mode=trending&network=1" class="filter-pill{% if include_network %} active{% endif %}">Show network</a>
-            <a href="/?window={{ window_days }}&trend_mode=trending&network=0" class="filter-pill{% if not include_network %} active{% endif %}">Hide network</a>
-          </div>
+        <div class="filters" role="group" aria-label="Network toggle">
+          <span class="chip">Network</span>
+          <a href="/trending/{{ window_days }}?network=1" class="filter-pill{% if include_network %} active{% endif %}">Show network</a>
+          <a href="/trending/{{ window_days }}?network=0" class="filter-pill{% if not include_network %} active{% endif %}">Hide network</a>
         </div>
       </div>
       <div class="status-bar">
