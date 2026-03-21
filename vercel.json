@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "https://oss-analytics-dashboard-415500942280.us-central1.run.app"
+      "destination": "https://oss-analytics-dashboard-415500942280.us-central1.run.app/$1"
     }
   ]
 }
