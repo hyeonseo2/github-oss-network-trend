@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import requests
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, Response
 from google.cloud import bigquery
 
 app = Flask(__name__)
@@ -493,28 +493,20 @@ def build_trend_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], 
 
 
 
-def _bq_string_array(values: list[str]) -> str:
-    """Return a valid BigQuery array literal from a list of strings."""
-    if not values:
-        return 'CAST([] AS ARRAY<STRING>)'
-    quoted = ', '.join(f"'{_sql_quote_identifier(str(v))}'" for v in values)
-    return f"[{quoted}]"
-
-
-
-@app.route("/")
-def index():
-    # For first-load consistency, keep default window on 30D
-    if request.args.get("window") is None:
-        return redirect(url_for("index", window=30, trend_mode="trending", network=request.args.get("network", "0")))
-
+def _parse_window_param(raw_value: str | None, default_days: int = DEFAULT_WINDOW_DAYS) -> int:
     allowed_window_days = {7, 14, 30}
-    requested_window_days = _safe_int(request.args.get("window"), DEFAULT_WINDOW_DAYS, 1, 365)
-    window_days = requested_window_days if requested_window_days in allowed_window_days else DEFAULT_WINDOW_DAYS
-    # This UI keeps trend mode fixed to Trending only.
-    trend_mode = "trending"
+    requested = _safe_int(raw_value, default_days, 1, 365)
+    return requested if requested in allowed_window_days else default_days
 
-    include_network = request.args.get("network", "0") not in {"0", "false", "False", "off", "no", "0"}
+
+def _parse_network_param(raw_value: str | None) -> bool:
+    if raw_value is None:
+        return False
+    return str(raw_value).strip().lower() not in {"0", "false", "off", "no"}
+
+
+def _render_dashboard(window_days: int, trend_mode: str, include_network: bool):
+    trend_mode = "trending" if trend_mode not in {"trending", "balanced", "niche", "default"} else trend_mode
 
     trend_rows: list[dict[str, Any]] = []
     trend_chart_rows: list[dict[str, Any]] = []
@@ -530,6 +522,8 @@ def index():
     pipeline_status = None
     trend_columns = ["repo_name", "activity_delta_window", "contributors_delta_window", "stars_total", "forks_total", "delta_score", "last_activity_date"]
     edge_columns = ["source_repo", "target_repo", "shared_contributor_count"]
+
+    canonical_url = request.url_root.rstrip("/") + f"/trending/{window_days}?network={1 if include_network else 0}"
 
     project_for_view = GCP_PROJECT or "(Not set)"
     try:
@@ -568,8 +562,8 @@ def index():
                     trend_error = "No popular repositories found for this window/mode."
                 else:
                     trend_rows = fetch_repo_trend_metrics(client, repos, window_days)
-                    exact_baseline_count = sum(1 for r in trend_rows if r.get("has_exact_baseline", False))
-                    baseline_count = sum(1 for r in trend_rows if r.get("has_baseline", False))
+                    _ = sum(1 for r in trend_rows if r.get("has_exact_baseline", False))
+                    _ = sum(1 for r in trend_rows if r.get("has_baseline", False))
                     trend_rows, trend_chart_rows = build_trend_rows(trend_rows)
 
                     user_event_rows = trend_rows
@@ -583,8 +577,6 @@ def index():
                             edge_graph_rows = edge_rows
                         except Exception as e:
                             edge_error = f"edge query failed: {e}"
-                    else:
-                        pass
                     _cache_set(
                         cache_key,
                         {
@@ -623,7 +615,67 @@ def index():
         trend_error=trend_error,
         trend_warning=trend_warning,
         edge_error=edge_error,
+        canonical_url=canonical_url,
     )
+
+
+
+def _bq_string_array(values: list[str]) -> str:
+    """Return a valid BigQuery array literal from a list of strings."""
+    if not values:
+        return 'CAST([] AS ARRAY<STRING>)'
+    quoted = ', '.join(f"'{_sql_quote_identifier(str(v))}'" for v in values)
+    return f"[{quoted}]"
+
+
+
+@app.route("/")
+def index():
+    if request.args.get("window") is None:
+        return redirect(url_for("index", window=30, trend_mode="trending", network=request.args.get("network", "0")))
+
+    window_days = _parse_window_param(request.args.get("window"), DEFAULT_WINDOW_DAYS)
+    trend_mode = request.args.get("trend_mode", "trending") or "trending"
+    include_network = _parse_network_param(request.args.get("network", "0"))
+    return _render_dashboard(window_days, trend_mode, include_network)
+
+
+@app.route("/trending/<int:window_days>")
+def trending(window_days: int):
+    normalized_window = _parse_window_param(str(window_days), DEFAULT_WINDOW_DAYS)
+    trend_mode = request.args.get("trend_mode", "trending") or "trending"
+    include_network = _parse_network_param(request.args.get("network", "0"))
+    return _render_dashboard(normalized_window, trend_mode, include_network)
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    body = """User-agent: *
+Allow: /
+
+Sitemap: {sitemap}
+""".format(sitemap=(request.url_root.rstrip("/") + "/sitemap.xml"))
+    return app.response_class(body, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    base = request.url_root.rstrip("/")
+    urls = [
+        f"{base}/",
+        f"{base}/trending/7?network=0",
+        f"{base}/trending/14?network=0",
+        f"{base}/trending/30?network=0",
+    ]
+
+    entries = "".join(f"\n        <url><loc>{url}</loc></url>" for url in urls)
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"{entries}\n"
+        "</urlset>"
+    )
+    return Response(body, mimetype="application/xml")
 
 
 if __name__ == "__main__":

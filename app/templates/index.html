@@ -4,6 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GitHub OSS Network Trend Dashboard</title>
+    <meta name="description" content="Track GitHub OSS repository trends with activity changes, contributor movement, and shared-contributor network views for 7D, 14D, and 30D windows." />
+    <meta name="keywords" content="GitHub, open source, OSS, trend dashboard, repository analytics, contributor network, open-source projects, 30D, 14D, 7D" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:title" content="GitHub OSS Network Trend Dashboard" />
+    <meta property="og:description" content="Monitor trending open-source repositories, activity deltas, contributors, and repo relationships across recent windows." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{{ canonical_url or (request.url_root | trim('/') + '/trending/' + (window_days|string) + '?network=' + ('1' if include_network else '0')) }}" />
+    <meta property="og:site_name" content="GitHub OSS Network Trend" />
+    <link rel="canonical" href="{{ canonical_url or (request.url_root | trim('/') + '/trending/' + (window_days|string) + '?network=' + ('1' if include_network else '0')) }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
@@ -60,6 +69,43 @@
         color: var(--muted);
         font-size: 14px;
         line-height: 1.6;
+      }
+
+      .seo-lead {
+        margin: 4px 0 0;
+        color: var(--muted);
+        max-width: 880px;
+      }
+
+      .quick-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .quick-nav a {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #d7deeb;
+        border-radius: 999px;
+        font-size: 13px;
+        text-decoration: none;
+        color: #334155;
+        background: #fff;
+      }
+
+      .quick-nav a:hover {
+        background: #f3f6ff;
+        border-color: #b6c5ff;
+      }
+
+      .quick-nav a.active {
+        background: #e9edff;
+        color: #1f2937;
+        border-color: #9eb5ff;
+        font-weight: 700;
       }
 
       .grid {
@@ -327,10 +373,16 @@
   </head>
   <body>
     <div class="container">
+      <h1>GitHub OSS Network Trend Dashboard</h1>
+      <p class="seo-lead">Explore GitHub repository trend analytics with change metrics across activity, contributors, and shared contributor network insights for OSS projects.</p>
+      <nav class="quick-nav" aria-label="Popular trend windows">
+        <a href="/trending/7?network={{ 1 if include_network else 0 }}" class="{% if window_days == 7 %}active{% endif %}">7D trend</a>
+        <a href="/trending/14?network={{ 1 if include_network else 0 }}" class="{% if window_days == 14 %}active{% endif %}">14D trend</a>
+        <a href="/trending/30?network={{ 1 if include_network else 0 }}" class="{% if window_days == 30 %}active{% endif %}">30D trend</a>
+      </nav>
+
       <div class="controls-top">
-        <div>
-          <h1>GitHub OSS Network Trend Dashboard</h1>
-        </div>
+        <div></div>
         <div>
           <div class="filters" role="group" aria-label="Aggregation window">
             <span class="chip">Window</span>
