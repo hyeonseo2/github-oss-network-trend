@@ -26,3 +26,24 @@ gcloud run deploy "${SERVICE_NAME}" \
 ## 3) Required IAM (Cloud Run runtime service account)
 - BigQuery `roles/bigquery.jobUser`
 - BigQuery dataset read access (`roles/bigquery.dataViewer`) on `oss_analytics_mart`
+
+## 4) Optional: Vercel (Custom URL for Dashboard)
+
+You can expose the Cloud Run dashboard with a cleaner URL using Vercel (no backend changes required).
+
+- Add `vercel.json` to repository root
+
+```json
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "https://<YOUR_CLOUD_RUN_URL>"
+    }
+  ]
+}
+```
+
+
+---
+
