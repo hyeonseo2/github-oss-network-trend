@@ -8,7 +8,7 @@ GitHub 공개 이벤트를 기반으로 저장소 성장 추세(Trend)와 저장
 
 ## 빠른 링크
 
-- 🚀 [라이브 대시보드](https://oss-analytics-dashboard-415500942280.us-central1.run.app/)
+- 🚀 [라이브 대시보드](https://github-oss-network-trend.vercel.app/)
 - 🧪 [DE Zoomcamp 프로젝트 문서](docs/de_zoomcamp_project_document.md)
 - ☁️ [Cloud Run 배포 가이드](docs/cloud_run_deploy.md)
 

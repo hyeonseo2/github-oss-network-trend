@@ -83,7 +83,7 @@ GitHub Archive -> GCS -> BigQuery Raw
 ## 6) Dashboard and user story
 
 ### Dashboard URL
-- https://oss-analytics-dashboard-415500942280.us-central1.run.app/
+- https://github-oss-network-trend.vercel.app/
 
 ### Required two tiles
 

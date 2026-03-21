@@ -7,7 +7,7 @@ An end-to-end analytics stack for GitHub repository growth and cross-repository 
 This project is built with a daily batch pipeline on GitHub Actions, transforms public GitHub event data with dbt in BigQuery, and serves insights through a Flask dashboard on Cloud Run.
 
 ## Quick Links
-- 🚀 [Live Dashboard](https://oss-analytics-dashboard-415500942280.us-central1.run.app/)
+- 🚀 [Live Dashboard](https://github-oss-network-trend.vercel.app/)
 - 🧪 [DE Zoomcamp Project Document](docs/de_zoomcamp_project_document.md)
 - ☁️ [Cloud Run Deploy Guide](docs/cloud_run_deploy.md)
 
