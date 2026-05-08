@@ -148,27 +148,45 @@ def search_repositories(client: GitHubClient, max_repos: int, since_date: date) 
     return list(rows.values())[:max_repos]
 
 
-def fetch_repo_events(client: GitHubClient, repo_name: str) -> list[tuple[date, str]]:
-    try:
-        payload = client.get_json(f"/repos/{repo_name}/events", {"per_page": 100})
-    except RuntimeError as exc:
-        print(f"[warn] skip events for {repo_name}: {exc}", file=sys.stderr)
-        return []
-
+def fetch_repo_events(
+    client: GitHubClient,
+    repo_name: str,
+    since_date: date,
+    max_pages: int,
+) -> list[tuple[date, str]]:
     rows: list[tuple[date, str]] = []
-    for event in payload:
-        event_type = str(event.get("type") or "")
-        if event_type not in EVENT_TYPES:
-            continue
+    stop_paging = False
 
-        created_at = str(event.get("created_at") or "")
+    for page in range(1, max_pages + 1):
         try:
-            event_date = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ").date()
-        except Exception:
-            continue
+            payload = client.get_json(f"/repos/{repo_name}/events", {"per_page": 100, "page": page})
+        except RuntimeError as exc:
+            print(f"[warn] skip events for {repo_name}: {exc}", file=sys.stderr)
+            break
 
-        actor = str((event.get("actor") or {}).get("login") or "")
-        rows.append((event_date, actor))
+        if not isinstance(payload, list) or not payload:
+            break
+
+        for event in payload:
+            created_at = str(event.get("created_at") or "")
+            try:
+                event_date = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ").date()
+            except Exception:
+                continue
+
+            if event_date < since_date:
+                stop_paging = True
+                continue
+
+            event_type = str(event.get("type") or "")
+            if event_type not in EVENT_TYPES:
+                continue
+
+            actor = str((event.get("actor") or {}).get("login") or "")
+            rows.append((event_date, actor))
+
+        if stop_paging:
+            break
 
     return rows
 
@@ -422,6 +440,7 @@ def main() -> int:
     parser.add_argument("--min-shared-count", type=int, default=_env_int("MIN_SHARED_COUNT", 1, 1, 10))
     parser.add_argument("--sleep-ms", type=int, default=_env_int("REQUEST_SLEEP_MS", 80, 0, 3000))
     parser.add_argument("--http-timeout", type=int, default=_env_int("HTTP_TIMEOUT_SECONDS", 20, 5, 120))
+    parser.add_argument("--event-max-pages", type=int, default=_env_int("EVENT_MAX_PAGES", 5, 1, 10))
     args = parser.parse_args()
 
     token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
@@ -439,7 +458,7 @@ def main() -> int:
     for index, repo in enumerate(candidates, start=1):
         repo_name = repo["repo_name"]
         print(f"[info] ({index}/{len(candidates)}) {repo_name}", file=sys.stderr)
-        events = fetch_repo_events(client, repo_name)
+        events = fetch_repo_events(client, repo_name, since_date=since_date, max_pages=args.event_max_pages)
         if not events:
             continue
         contributors = fetch_repo_contributors(client, repo_name)

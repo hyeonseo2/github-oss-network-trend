@@ -428,6 +428,7 @@
         includeNetwork: true,
         minSharedCount: 1,
         search: "",
+        reloadSeq: 0,
         meta: null,
         trends: new Map(),
         networks: new Map(),
@@ -828,6 +829,7 @@
       }
 
       async function reload() {
+        const seq = ++state.reloadSeq;
         setError("");
         setStatus("Loading snapshots...");
         try {
@@ -835,6 +837,7 @@
           const trendPayload = await ensureTrend(state.windowDays);
           const trendRows = filterTrendRows(trendPayload.rows || []);
           const networkPayload = await ensureNetwork(state.windowDays);
+          if (seq !== state.reloadSeq) return;
 
           renderTrendTable(trendRows);
           renderTrendChart(trendRows);
@@ -902,11 +905,13 @@
 
         parseUrlState();
         bindEvents();
-        els.minSharedRange.addEventListener("input", async (event) => {
+        const onEdgeStrengthChange = async (event) => {
           state.minSharedCount = Number(event.target.value || 1);
           els.minSharedValue.textContent = String(state.minSharedCount);
           await reload();
-        });
+        };
+        els.minSharedRange.addEventListener("input", onEdgeStrengthChange);
+        els.minSharedRange.addEventListener("change", onEdgeStrengthChange);
         await reload();
       }
 
