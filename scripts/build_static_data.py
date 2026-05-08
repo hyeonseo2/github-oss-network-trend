@@ -51,6 +51,7 @@ class RepoSnapshot:
     forks_total: int
     description: str
     last_activity_date: str | None
+    network_contributors: list[str]
     windows: dict[int, dict[str, Any]]
 
 
@@ -172,6 +173,30 @@ def fetch_repo_events(client: GitHubClient, repo_name: str) -> list[tuple[date, 
     return rows
 
 
+def fetch_repo_contributors(client: GitHubClient, repo_name: str) -> list[str]:
+    try:
+        payload = client.get_json(
+            f"/repos/{repo_name}/contributors",
+            {"per_page": 100, "page": 1, "anon": "false"},
+        )
+    except RuntimeError as exc:
+        print(f"[warn] skip contributors for {repo_name}: {exc}", file=sys.stderr)
+        return []
+
+    if not isinstance(payload, list):
+        return []
+
+    contributors: set[str] = set()
+    for row in payload:
+        login = str((row or {}).get("login") or "")
+        if not login:
+            continue
+        if _is_bot(login):
+            continue
+        contributors.add(login)
+    return sorted(contributors)
+
+
 def build_windows(events: list[tuple[date, str]], analysis_end: date) -> tuple[dict[int, dict[str, Any]], str | None]:
     windows: dict[int, dict[str, Any]] = {}
     last_activity: date | None = None
@@ -216,8 +241,15 @@ def build_windows(events: list[tuple[date, str]], analysis_end: date) -> tuple[d
     return windows, (last_activity.isoformat() if last_activity else None)
 
 
-def build_repo_snapshot(repo: dict[str, Any], events: list[tuple[date, str]], analysis_end: date) -> RepoSnapshot:
+def build_repo_snapshot(
+    repo: dict[str, Any],
+    events: list[tuple[date, str]],
+    analysis_end: date,
+    fallback_network_contributors: list[str],
+) -> RepoSnapshot:
     windows, last_activity_date = build_windows(events, analysis_end)
+    network_contributors: set[str] = set(fallback_network_contributors)
+    network_contributors.update(windows[30]["contributors_set"])
     return RepoSnapshot(
         repo_name=repo["repo_name"],
         repo_url=repo["repo_url"],
@@ -225,6 +257,7 @@ def build_repo_snapshot(repo: dict[str, Any], events: list[tuple[date, str]], an
         forks_total=int(repo["forks_total"]),
         description=str(repo["description"]),
         last_activity_date=last_activity_date,
+        network_contributors=sorted(network_contributors),
         windows=windows,
     )
 
@@ -295,7 +328,8 @@ def build_network(
         metrics = snap.windows[window_days]
         if metrics["activity_current"] <= 0:
             continue
-        for contributor in metrics["contributors_set"]:
+        contributors = snap.network_contributors or metrics["contributors_set"]
+        for contributor in contributors:
             if contributor:
                 contributor_to_repos[contributor].add(snap.repo_name)
 
@@ -408,7 +442,8 @@ def main() -> int:
         events = fetch_repo_events(client, repo_name)
         if not events:
             continue
-        snapshots.append(build_repo_snapshot(repo, events, analysis_end))
+        contributors = fetch_repo_contributors(client, repo_name)
+        snapshots.append(build_repo_snapshot(repo, events, analysis_end, contributors))
         if args.sleep_ms > 0:
             time.sleep(args.sleep_ms / 1000.0)
 

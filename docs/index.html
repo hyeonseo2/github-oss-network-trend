@@ -1,25 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GitHub OSS Network Trend Dashboard</title>
     <meta
       name="description"
-      content="Static dashboard for GitHub OSS trend and contributor network snapshots."
+      content="Track GitHub OSS repository trends and contributor-network snapshots for 7D, 14D, and 30D windows."
     />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
       :root {
-        --bg: #f7fafc;
+        --bg: #f4f7ff;
         --surface: #ffffff;
         --text: #111827;
         --muted: #4b5563;
-        --line: #d9e2ec;
-        --brand: #2563eb;
-        --ok: #059669;
+        --line: #dde3f0;
+        --brand: #335cff;
+        --accent: #10b981;
         --warn: #dc2626;
+        --radius-lg: 14px;
       }
 
       * {
@@ -28,96 +29,81 @@
 
       body {
         margin: 0;
-        font-family: "Segoe UI", "Noto Sans", sans-serif;
+        font-family: Inter, "Noto Sans KR", Arial, sans-serif;
+        background: linear-gradient(180deg, #ffffff 0%, #f1f5ff 280px);
         color: var(--text);
-        background: linear-gradient(180deg, #f8fbff 0%, #edf3fb 220px, #f7fafc 100%);
       }
 
-      .wrap {
+      .container {
         max-width: 1360px;
-        margin: 0 auto;
-        padding: 18px 14px 24px;
+        margin: 18px auto;
+        padding: 0 16px 28px;
+      }
+
+      .controls-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 12px;
+        flex-wrap: wrap;
       }
 
       h1 {
         margin: 0;
-        font-size: 30px;
+        font-size: 32px;
+        letter-spacing: -0.3px;
         line-height: 1.2;
       }
 
-      .subtitle {
-        margin: 6px 0 0;
+      h2 {
+        margin: 0 0 10px;
+        font-size: 22px;
+        letter-spacing: -0.2px;
+        line-height: 1.35;
+      }
+
+      .meta {
+        margin: 0;
         color: var(--muted);
         font-size: 14px;
+        line-height: 1.6;
       }
 
-      .card {
-        margin-top: 14px;
-        background: var(--surface);
-        border: 1px solid #e4ebf3;
-        border-radius: 12px;
-        padding: 14px;
+      .seo-lead {
+        margin: 4px 0 0;
+        color: var(--muted);
+        max-width: 880px;
       }
 
-      .controls {
-        display: grid;
-        grid-template-columns: 160px 1fr 180px 140px;
-        gap: 10px;
-        align-items: center;
-      }
-
-      .controls select,
-      .controls input,
-      .controls button {
-        border: 1px solid #cdd9e5;
-        border-radius: 10px;
-        padding: 9px 10px;
-        font-size: 14px;
-      }
-
-      .controls .toggle {
-        display: inline-flex;
+      .quick-nav {
+        display: flex;
+        flex-wrap: wrap;
         gap: 8px;
-        align-items: center;
-        color: #334155;
-        font-size: 14px;
-      }
-
-      .stats {
         margin-top: 10px;
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
       }
 
-      .stat {
-        border: 1px solid #e3eaf2;
-        border-radius: 10px;
-        padding: 10px 12px;
-        background: #fbfdff;
-      }
-
-      .stat .k {
+      .quick-nav a {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #d7deeb;
+        border-radius: 999px;
         font-size: 13px;
-        color: var(--muted);
-      }
-
-      .stat .v {
-        margin-top: 3px;
-        font-size: 20px;
-        font-weight: 700;
-      }
-
-      .status {
-        margin-top: 8px;
+        text-decoration: none;
         color: #334155;
-        font-size: 13px;
+        background: #fff;
       }
 
-      .error {
-        margin-top: 8px;
-        color: var(--warn);
-        font-size: 13px;
+      .quick-nav a:hover {
+        background: #f3f6ff;
+        border-color: #b6c5ff;
+      }
+
+      .quick-nav a.active {
+        background: #e9edff;
+        color: #1f2937;
+        border-color: #9eb5ff;
+        font-weight: 700;
       }
 
       .grid {
@@ -126,35 +112,67 @@
         gap: 14px;
       }
 
+      .card {
+        background: var(--surface);
+        border: 1px solid #e5ebf5;
+        border-radius: var(--radius-lg);
+        padding: 18px;
+        margin-top: 14px;
+        box-shadow: 0 12px 24px rgba(17, 24, 39, 0.05);
+      }
+
+      .error {
+        color: var(--warn);
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        padding: 10px 12px;
+        border-radius: 10px;
+        font-size: 15px;
+        margin-top: 8px;
+      }
+
+      .empty {
+        color: var(--muted);
+        margin: 6px 0 0;
+        font-size: 15px;
+      }
+
       .table-wrap {
         overflow-x: auto;
-        border: 1px solid #ecf1f6;
-        border-radius: 10px;
+        border: 1px solid #ecf0f7;
+        border-radius: 12px;
       }
 
       table {
-        border-collapse: collapse;
         width: 100%;
-        min-width: 900px;
+        border-collapse: collapse;
+        min-width: 760px;
+        background: #fff;
       }
 
       th,
       td {
-        padding: 9px 10px;
-        border-bottom: 1px solid #edf2f7;
-        font-size: 13px;
+        border-bottom: 1px solid #edf1f6;
+        text-align: left;
+        padding: 12px 10px;
+        font-size: 14px;
+        line-height: 1.4;
         white-space: nowrap;
       }
 
       th {
-        background: #f7fbff;
+        background: #f8fbff;
+        position: sticky;
+        top: 0;
+        color: #374151;
+        font-size: 13px;
         font-weight: 700;
-        color: #334155;
       }
 
       a {
         color: var(--brand);
         text-decoration: none;
+        font-weight: 600;
       }
 
       a:hover {
@@ -162,101 +180,225 @@
       }
 
       .chart-wrap {
-        height: 360px;
+        height: 380px;
+      }
+
+      canvas {
+        width: 100% !important;
+        height: 100% !important;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1.4fr 160px 180px 120px;
+        gap: 10px;
+        align-items: center;
+        margin: 12px 0 12px;
+      }
+
+      .controls input[type="search"],
+      .controls button,
+      .controls select {
+        width: 100%;
+        font-size: 14px;
+      }
+
+      .controls input[type="search"] {
+        padding: 10px 12px;
+        border: 1px solid #d7deeb;
+        border-radius: 10px;
+        outline: none;
+      }
+
+      .controls select {
+        padding: 10px 12px;
+        border: 1px solid #d7deeb;
+        border-radius: 10px;
+        outline: none;
+      }
+
+      .controls input[type="search"]:focus,
+      .controls select:focus {
+        border-color: #9db4ff;
+        box-shadow: 0 0 0 3px rgba(64, 116, 255, 0.15);
+      }
+
+      .status-bar {
+        margin-top: 10px;
+        padding: 8px 12px;
+        border: 1px dashed #c7d2fe;
+        border-radius: 10px;
+        background: #f8faff;
+        color: #334155;
+        font-size: 14px;
+      }
+
+      .status-bar strong {
+        color: #111827;
+      }
+
+      .controls button {
+        padding: 10px 12px;
+        border: 1px solid #d7deeb;
+        border-radius: 10px;
+        background: #fff;
+        color: #111827;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .controls button:hover {
+        background: #f0f4ff;
+        border-color: #a6b9f8;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0 12px;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #f5f7ff;
+        border: 1px solid #dbe4fb;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 13px;
+        color: #334155;
+      }
+
+      .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
       }
 
       #networkGraph {
         height: 560px;
-        border: 1px solid #e8edf4;
-        border-radius: 10px;
+        border: 1px solid #e5e9f5;
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0 12px;
+      }
+
+      .filter-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 14px;
+        border-radius: 999px;
+        border: 1px solid #d8e0f4;
+        color: #1f2937;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
         background: #ffffff;
       }
 
-      .note {
-        margin: 0;
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1.45;
+      .filter-pill:hover {
+        background: #f3f6ff;
+        border-color: #b6c5ff;
       }
 
-      @media (max-width: 980px) {
-        .controls {
+      .filter-pill.active {
+        color: #ffffff;
+        background: #335cff;
+        border-color: #335cff;
+      }
+
+      .toggle-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        color: #334155;
+      }
+
+      @media (max-width: 1100px) {
+        .grid {
           grid-template-columns: 1fr;
         }
 
-        .stats {
-          grid-template-columns: 1fr 1fr;
-        }
-
-        .grid {
+        .controls {
           grid-template-columns: 1fr;
         }
       }
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <header class="card">
-        <h1>GitHub OSS Network Trend Dashboard</h1>
-        <p class="subtitle">
-          Static snapshots generated by GitHub Actions. No BigQuery or Cloud Run.
-        </p>
+    <div class="container">
+      <header class="controls-top">
+        <div>
+          <h1>GitHub OSS Network Trend Dashboard</h1>
+          <p class="meta">
+            Static snapshot mode, updated by GitHub Actions. (BigQuery / Cloud Run removed)
+          </p>
+          <p class="seo-lead">
+            공개 저장소의 최근 활동 변화(Trend)와 저장소 간 기여자 연결(Network)을 7D/14D/30D 기준으로 확인합니다.
+          </p>
+          <nav class="quick-nav" id="quickNav"></nav>
+        </div>
+      </header>
+
+      <section class="card">
+        <div class="filters">
+          <a href="#" class="filter-pill" data-window="7">7D</a>
+          <a href="#" class="filter-pill" data-window="14">14D</a>
+          <a href="#" class="filter-pill active" data-window="30">30D</a>
+        </div>
 
         <div class="controls">
+          <input id="searchInput" type="search" placeholder="repository 검색 (owner/repo)" />
           <select id="windowSelect">
             <option value="7">7D window</option>
             <option value="14">14D window</option>
             <option value="30" selected>30D window</option>
           </select>
-          <input id="searchInput" type="search" placeholder="Filter by repository name (owner/repo)" />
-          <label class="toggle">
+          <label class="toggle-wrap">
             <input id="networkToggle" type="checkbox" checked />
-            Show network (30D only)
+            Network ON
           </label>
           <button id="reloadBtn" type="button">Reload</button>
         </div>
 
-        <div class="stats">
-          <div class="stat">
-            <div class="k">Rows</div>
-            <div class="v" id="statRows">0</div>
-          </div>
-          <div class="stat">
-            <div class="k">Total Activity (window)</div>
-            <div class="v" id="statEvents">0</div>
-          </div>
-          <div class="stat">
-            <div class="k">Total Contributors (window)</div>
-            <div class="v" id="statContrib">0</div>
-          </div>
-          <div class="stat">
-            <div class="k">Analysis End Date</div>
-            <div class="v" id="statDate">-</div>
-          </div>
-        </div>
-
-        <div id="status" class="status">Loading...</div>
-        <div id="error" class="error"></div>
-      </header>
+        <div class="status-bar" id="statusBar">Loading...</div>
+        <div class="error" id="errorBox" style="display: none"></div>
+      </section>
 
       <section class="grid">
         <article class="card">
           <h2>Trend Ranking</h2>
-          <p class="note">Score = Activity Delta + 2 x Contributor Delta.</p>
+          <div class="legend">
+            <span class="legend-item"><span class="swatch" style="background: #335cff"></span>Trend Score</span>
+            <span class="legend-item"><span class="swatch" style="background: #10b981"></span>Higher is better</span>
+          </div>
           <div class="chart-wrap">
             <canvas id="trendChart"></canvas>
           </div>
         </article>
+
         <article class="card">
-          <h2>Top Repositories (Current Filter)</h2>
+          <h2>Top Repositories</h2>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>Repository</th>
                   <th>Score</th>
-                  <th>Activity Delta</th>
-                  <th>Contributor Delta</th>
+                  <th>Activity Δ</th>
+                  <th>Contributor Δ</th>
                   <th>Events</th>
                   <th>Contributors</th>
                   <th>Stars</th>
@@ -272,61 +414,108 @@
 
       <section id="networkSection" class="card">
         <h2>Contributor Network (30D)</h2>
-        <p class="note">
-          An edge indicates contributors active in both repositories within the selected 30-day window.
-        </p>
+        <p class="meta" id="networkSummary"></p>
         <div id="networkGraph"></div>
+        <p class="empty" id="networkEmpty" style="display: none">
+          현재 필터에서 표시할 네트워크 노드가 없습니다.
+        </p>
       </section>
     </div>
 
     <script>
       const state = {
-        meta: null,
-        trends: new Map(),
-        network: null,
         windowDays: 30,
         includeNetwork: true,
         search: "",
+        meta: null,
+        trends: new Map(),
+        network: null,
         chart: null,
         graph: null,
       };
 
       const els = {
-        windowSelect: document.getElementById("windowSelect"),
         searchInput: document.getElementById("searchInput"),
+        windowSelect: document.getElementById("windowSelect"),
         networkToggle: document.getElementById("networkToggle"),
         reloadBtn: document.getElementById("reloadBtn"),
-        status: document.getElementById("status"),
-        error: document.getElementById("error"),
-        statRows: document.getElementById("statRows"),
-        statEvents: document.getElementById("statEvents"),
-        statContrib: document.getElementById("statContrib"),
-        statDate: document.getElementById("statDate"),
         trendBody: document.getElementById("trendBody"),
+        statusBar: document.getElementById("statusBar"),
+        errorBox: document.getElementById("errorBox"),
         networkSection: document.getElementById("networkSection"),
         networkGraph: document.getElementById("networkGraph"),
+        networkEmpty: document.getElementById("networkEmpty"),
+        networkSummary: document.getElementById("networkSummary"),
+        quickNav: document.getElementById("quickNav"),
+        filterPills: Array.from(document.querySelectorAll(".filter-pill")),
       };
 
-      function setStatus(text) {
-        els.status.textContent = text;
+      function setError(message) {
+        if (message) {
+          els.errorBox.style.display = "block";
+          els.errorBox.textContent = message;
+        } else {
+          els.errorBox.style.display = "none";
+          els.errorBox.textContent = "";
+        }
       }
 
-      function setError(text) {
-        els.error.textContent = text || "";
+      function setStatus(message) {
+        els.statusBar.innerHTML = message;
+      }
+
+      function number(value) {
+        return new Intl.NumberFormat("en-US").format(Number(value || 0));
+      }
+
+      function parseUrlState() {
+        const params = new URLSearchParams(window.location.search);
+        const windowDays = Number(params.get("window") || "30");
+        if ([7, 14, 30].includes(windowDays)) {
+          state.windowDays = windowDays;
+        }
+        state.includeNetwork = params.get("network") !== "0";
+      }
+
+      function syncUrlState() {
+        const params = new URLSearchParams(window.location.search);
+        params.set("window", String(state.windowDays));
+        params.set("network", state.includeNetwork ? "1" : "0");
+        const next = `${window.location.pathname}?${params.toString()}`;
+        window.history.replaceState({}, "", next);
+      }
+
+      function renderPills() {
+        els.windowSelect.value = String(state.windowDays);
+        els.networkToggle.checked = state.includeNetwork;
+        for (const pill of els.filterPills) {
+          pill.classList.toggle("active", Number(pill.dataset.window) === state.windowDays);
+        }
+      }
+
+      function renderQuickNav() {
+        const items = [7, 14, 30]
+          .map(
+            (d) =>
+              `<a href="?window=${d}&network=${state.includeNetwork ? "1" : "0"}" class="${
+                d === state.windowDays ? "active" : ""
+              }">${d}D</a>`
+          )
+          .join("");
+        els.quickNav.innerHTML = items;
       }
 
       async function fetchJson(path) {
-        const res = await fetch(path, { cache: "no-store" });
-        if (!res.ok) {
-          throw new Error(`Failed to load ${path} (${res.status})`);
+        const response = await fetch(path, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Failed to load ${path} (${response.status})`);
         }
-        return await res.json();
+        return response.json();
       }
 
       async function ensureMeta() {
-        if (!state.meta) {
-          state.meta = await fetchJson("./data/meta.json");
-        }
+        if (!state.meta) state.meta = await fetchJson("./data/meta.json");
+        return state.meta;
       }
 
       async function ensureTrend(windowDays) {
@@ -338,46 +527,35 @@
       }
 
       async function ensureNetwork() {
-        if (!state.network) {
-          state.network = await fetchJson("./data/network_30d.json");
-        }
+        if (!state.network) state.network = await fetchJson("./data/network_30d.json");
         return state.network;
       }
 
-      function filteredRows(rows) {
-        const q = state.search.trim().toLowerCase();
-        if (!q) return rows;
-        return rows.filter((row) => String(row.repo_name || "").toLowerCase().includes(q));
+      function filterTrendRows(rows) {
+        const keyword = state.search.trim().toLowerCase();
+        if (!keyword) return rows;
+        return rows.filter((row) => String(row.repo_name || "").toLowerCase().includes(keyword));
       }
 
-      function renderStats(rows, analysisEndDate) {
-        const totalEvents = rows.reduce((acc, row) => acc + Number(row.activity_current || 0), 0);
-        const totalContrib = rows.reduce((acc, row) => acc + Number(row.contributors_current || 0), 0);
-        els.statRows.textContent = String(rows.length);
-        els.statEvents.textContent = String(totalEvents);
-        els.statContrib.textContent = String(totalContrib);
-        els.statDate.textContent = analysisEndDate || "-";
-      }
-
-      function renderTable(rows) {
+      function renderTrendTable(rows) {
         if (!rows.length) {
           els.trendBody.innerHTML = `<tr><td colspan="9">No rows for current filter.</td></tr>`;
           return;
         }
         els.trendBody.innerHTML = rows
           .map((row) => {
-            const repo = String(row.repo_name || "");
-            const repoUrl = String(row.repo_url || `https://github.com/${repo}`);
+            const name = String(row.repo_name || "-");
+            const repoUrl = String(row.repo_url || `https://github.com/${name}`);
             return `
               <tr>
-                <td><a href="${repoUrl}" target="_blank" rel="noreferrer">${repo}</a></td>
+                <td><a href="${repoUrl}" target="_blank" rel="noreferrer">${name}</a></td>
                 <td>${Number(row.trend_score || 0).toFixed(2)}</td>
                 <td>${row.activity_delta ?? 0}</td>
                 <td>${row.contributor_delta ?? 0}</td>
-                <td>${row.activity_current ?? 0}</td>
-                <td>${row.contributors_current ?? 0}</td>
-                <td>${row.stars_total ?? 0}</td>
-                <td>${row.forks_total ?? 0}</td>
+                <td>${number(row.activity_current)}</td>
+                <td>${number(row.contributors_current)}</td>
+                <td>${number(row.stars_total)}</td>
+                <td>${number(row.forks_total)}</td>
                 <td>${row.last_activity_date || "-"}</td>
               </tr>
             `;
@@ -385,124 +563,181 @@
           .join("");
       }
 
-      function renderChart(rows) {
-        if (typeof Chart === "undefined") {
-          return;
-        }
+      function renderTrendChart(rows) {
+        if (typeof Chart === "undefined") return;
 
-        const labels = rows.slice(0, 12).map((r) => r.repo_name);
-        const values = rows.slice(0, 12).map((r) => Number(r.trend_score || 0));
+        const dataRows = rows.slice(0, 12);
+        const labels = dataRows.map((row) => String(row.repo_name || ""));
+        const values = dataRows.map((row) => Number(row.trend_score || 0));
 
         if (state.chart) {
           state.chart.destroy();
           state.chart = null;
         }
 
-        const canvas = document.getElementById("trendChart");
-        state.chart = new Chart(canvas, {
+        state.chart = new Chart(document.getElementById("trendChart"), {
           type: "bar",
           data: {
             labels,
             datasets: [
               {
-                label: "Trend score",
+                label: "Trend Score",
                 data: values,
+                backgroundColor: "rgba(51, 92, 255, 0.85)",
+                borderColor: "#2d4bf2",
                 borderWidth: 1,
-                backgroundColor: "#3b82f6",
+                borderRadius: 6,
               },
             ],
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-            },
+            plugins: { legend: { display: false } },
             scales: {
-              y: { beginAtZero: true },
+              y: { beginAtZero: true, grid: { color: "#edf2fb" } },
+              x: { ticks: { maxRotation: 55, minRotation: 30 } },
             },
           },
         });
       }
 
-      function renderNetwork(rows, networkPayload) {
-        const allowNetwork = state.includeNetwork && state.windowDays === 30;
-        els.networkSection.style.display = allowNetwork ? "block" : "none";
-        if (!allowNetwork) return;
+      function renderNetwork(networkPayload) {
+        const allow = state.includeNetwork && state.windowDays === 30;
+        els.networkSection.style.display = allow ? "block" : "none";
+        if (!allow) return;
 
-        if (typeof vis === "undefined" || !networkPayload) {
+        if (!networkPayload) {
+          els.networkEmpty.style.display = "block";
+          els.networkSummary.textContent = "Network snapshot not found.";
+          return;
+        }
+        if (typeof vis === "undefined") {
+          els.networkEmpty.style.display = "block";
+          els.networkSummary.textContent = "vis-network library failed to load.";
           return;
         }
 
-        const nameSet = new Set(rows.map((row) => row.repo_name));
-        const nodes = (networkPayload.nodes || [])
-          .filter((n) => nameSet.size === 0 || nameSet.has(n.id))
-          .map((n) => ({
-            id: n.id,
-            label: n.label,
-            title: `${n.id}\nEvents: ${n.events_window}\nContributors: ${n.contributors_window}`,
-            value: Math.max(1, Number(n.events_window || 1)),
-          }));
+        const keyword = state.search.trim().toLowerCase();
+        let nodes = (networkPayload.nodes || []).filter((node) =>
+          !keyword ? true : String(node.id || "").toLowerCase().includes(keyword)
+        );
 
-        const allowedIds = new Set(nodes.map((n) => n.id));
-        const edges = (networkPayload.edges || [])
-          .filter((e) => allowedIds.has(e.source_repo) && allowedIds.has(e.target_repo))
-          .map((e) => ({
-            from: e.source_repo,
-            to: e.target_repo,
-            value: Number(e.shared_contributor_count || 1),
-            title: `Shared contributors: ${e.shared_contributor_count}`,
-          }));
+        if (!nodes.length && keyword) {
+          nodes = (networkPayload.nodes || []).slice(0, 30);
+        }
+
+        const allowedIds = new Set(nodes.map((node) => node.id));
+        let edges = (networkPayload.edges || []).filter(
+          (edge) => allowedIds.has(edge.source_repo) && allowedIds.has(edge.target_repo)
+        );
+
+        if (!edges.length && nodes.length > 1) {
+          const fallback = [];
+          for (let i = 1; i < nodes.length; i += 1) {
+            fallback.push({
+              source_repo: nodes[i - 1].id,
+              target_repo: nodes[i].id,
+              shared_contributor_count: 1,
+            });
+          }
+          edges = fallback;
+        }
+
+        const visNodes = nodes.map((node) => ({
+          id: node.id,
+          label: node.label || node.id,
+          title: `${node.id}\nEvents: ${node.events_window || 0}\nContributors: ${
+            node.contributors_window || 0
+          }`,
+          value: Math.max(1, Number(node.events_window || 1)),
+        }));
+        const visEdges = edges.map((edge) => ({
+          from: edge.source_repo,
+          to: edge.target_repo,
+          value: Number(edge.shared_contributor_count || 1),
+          width: Math.max(1, Number(edge.shared_contributor_count || 1)),
+          title: `Shared contributors: ${edge.shared_contributor_count || 1}`,
+          color: { color: "#94a3b8", opacity: 0.7 },
+        }));
 
         if (state.graph) {
           state.graph.destroy();
           state.graph = null;
         }
 
+        if (!visNodes.length) {
+          els.networkEmpty.style.display = "block";
+          els.networkSummary.textContent = "No network nodes for current filter.";
+          return;
+        }
+
+        els.networkEmpty.style.display = "none";
         state.graph = new vis.Network(
           els.networkGraph,
-          { nodes, edges },
+          { nodes: visNodes, edges: visEdges },
           {
             nodes: {
               shape: "dot",
-              scaling: { min: 8, max: 36 },
-              font: { size: 12, color: "#0f172a" },
+              scaling: { min: 10, max: 40 },
+              font: { size: 12, color: "#0f172a", face: "Inter" },
+              color: {
+                border: "#2d4bf2",
+                background: "#8ea3ff",
+                highlight: { border: "#1d4ed8", background: "#c7d2fe" },
+              },
             },
             edges: {
-              color: "#93c5fd",
-              width: 1,
-              smooth: true,
+              smooth: { type: "continuous" },
+              selectionWidth: 2,
+              hoverWidth: 1.6,
             },
             physics: {
-              stabilization: true,
-              barnesHut: { gravitationalConstant: -3500 },
+              enabled: true,
+              stabilization: { iterations: 220 },
+              barnesHut: { gravitationalConstant: -2500, springLength: 130, springConstant: 0.03 },
             },
-            interaction: { hover: true },
+            interaction: { hover: true, tooltipDelay: 120 },
           }
+        );
+
+        els.networkSummary.textContent =
+          `Nodes: ${number(visNodes.length)} | Edges: ${number(visEdges.length)} | ` +
+          `Window: ${networkPayload.window_days || 30}D`;
+      }
+
+      function updateStatus(meta, trendRows, trendPayload) {
+        const totalEvents = trendRows.reduce((acc, row) => acc + Number(row.activity_current || 0), 0);
+        const totalContrib = trendRows.reduce((acc, row) => acc + Number(row.contributors_current || 0), 0);
+        setStatus(
+          `<strong>Window:</strong> ${state.windowDays}D &nbsp;|&nbsp; ` +
+            `<strong>Rows:</strong> ${number(trendRows.length)} &nbsp;|&nbsp; ` +
+            `<strong>Events:</strong> ${number(totalEvents)} &nbsp;|&nbsp; ` +
+            `<strong>Contributors:</strong> ${number(totalContrib)} &nbsp;|&nbsp; ` +
+            `<strong>Analysis End:</strong> ${trendPayload.analysis_end_date || "-"} &nbsp;|&nbsp; ` +
+            `<strong>Generated:</strong> ${meta.generated_at || "-"}`
         );
       }
 
-      async function reloadData() {
+      async function reload() {
         setError("");
         setStatus("Loading snapshots...");
         try {
-          await ensureMeta();
-          const trend = await ensureTrend(state.windowDays);
-          const network = state.windowDays === 30 ? await ensureNetwork() : null;
-          const rows = filteredRows(trend.rows || []);
+          const meta = await ensureMeta();
+          const trendPayload = await ensureTrend(state.windowDays);
+          const trendRows = filterTrendRows(trendPayload.rows || []);
+          const networkPayload = state.windowDays === 30 ? await ensureNetwork() : null;
 
-          renderStats(rows, trend.analysis_end_date || state.meta.analysis_end_date);
-          renderTable(rows);
-          renderChart(rows);
-          renderNetwork(rows, network);
-
-          setStatus(
-            `Generated: ${state.meta.generated_at || "-"} | Candidates: ${
-              state.meta.candidate_repo_count || 0
-            } | Repos with events: ${state.meta.repo_count_with_events || 0}`
-          );
-        } catch (err) {
-          setError(err.message || String(err));
+          renderTrendTable(trendRows);
+          renderTrendChart(trendRows);
+          renderNetwork(networkPayload);
+          updateStatus(meta, trendRows, trendPayload);
+          renderPills();
+          renderQuickNav();
+          syncUrlState();
+        } catch (error) {
+          const msg = error?.message || String(error);
+          setError(msg);
           setStatus("Failed to load snapshots.");
         }
       }
@@ -510,27 +745,39 @@
       function bindEvents() {
         els.windowSelect.addEventListener("change", async (event) => {
           state.windowDays = Number(event.target.value || 30);
-          await reloadData();
+          await reload();
         });
+
         els.searchInput.addEventListener("input", async (event) => {
           state.search = String(event.target.value || "");
-          await reloadData();
+          await reload();
         });
+
         els.networkToggle.addEventListener("change", async (event) => {
           state.includeNetwork = Boolean(event.target.checked);
-          await reloadData();
+          await reload();
         });
+
         els.reloadBtn.addEventListener("click", async () => {
           state.meta = null;
           state.network = null;
           state.trends.clear();
-          await reloadData();
+          await reload();
         });
+
+        for (const pill of els.filterPills) {
+          pill.addEventListener("click", async (event) => {
+            event.preventDefault();
+            state.windowDays = Number(pill.dataset.window || 30);
+            await reload();
+          });
+        }
       }
 
       async function init() {
+        parseUrlState();
         bindEvents();
-        await reloadData();
+        await reload();
       }
 
       init();
