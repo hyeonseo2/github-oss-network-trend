@@ -68,6 +68,8 @@ make run-site
 - `docs/data/trend_7d.json`
 - `docs/data/trend_14d.json`
 - `docs/data/trend_30d.json`
+- `docs/data/network_7d.json`
+- `docs/data/network_14d.json`
 - `docs/data/network_30d.json`
 - `docs/data/top_repos.json`
 
@@ -79,4 +81,3 @@ make run-site
 - 잔여 비용: GitHub Actions 사용량, GitHub Pages 트래픽
 
 공개 저장소라면 GitHub 정책상 표준 러너 사용은 무료 범위에서 운영 가능합니다.
-

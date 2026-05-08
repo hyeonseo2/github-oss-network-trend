@@ -458,6 +458,22 @@ def main() -> int:
         analysis_end=analysis_end,
         generated_at=generated_at,
     )
+    network_14d = build_network(
+        snapshots,
+        window_days=14,
+        max_edges=args.network_max_edges,
+        min_shared_count=args.min_shared_count,
+        analysis_end=analysis_end,
+        generated_at=generated_at,
+    )
+    network_7d = build_network(
+        snapshots,
+        window_days=7,
+        max_edges=args.network_max_edges,
+        min_shared_count=args.min_shared_count,
+        analysis_end=analysis_end,
+        generated_at=generated_at,
+    )
 
     top_repos = {
         "analysis_end_date": analysis_end.isoformat(),
@@ -480,6 +496,8 @@ def main() -> int:
     write_json(f"{out}/trend_7d.json", trend_7d)
     write_json(f"{out}/trend_14d.json", trend_14d)
     write_json(f"{out}/trend_30d.json", trend_30d)
+    write_json(f"{out}/network_7d.json", network_7d)
+    write_json(f"{out}/network_14d.json", network_14d)
     write_json(f"{out}/network_30d.json", network_30d)
     write_json(f"{out}/top_repos.json", top_repos)
 

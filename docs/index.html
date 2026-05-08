@@ -413,7 +413,7 @@
       </section>
 
       <section id="networkSection" class="card">
-        <h2>Contributor Network (30D)</h2>
+        <h2>Contributor Network</h2>
         <p class="meta" id="networkSummary"></p>
         <div id="networkGraph"></div>
         <p class="empty" id="networkEmpty" style="display: none">
@@ -426,10 +426,11 @@
       const state = {
         windowDays: 30,
         includeNetwork: true,
+        minSharedCount: 1,
         search: "",
         meta: null,
         trends: new Map(),
-        network: null,
+        networks: new Map(),
         chart: null,
         graph: null,
       };
@@ -438,6 +439,8 @@
         searchInput: document.getElementById("searchInput"),
         windowSelect: document.getElementById("windowSelect"),
         networkToggle: document.getElementById("networkToggle"),
+        minSharedRange: null,
+        minSharedValue: null,
         reloadBtn: document.getElementById("reloadBtn"),
         trendBody: document.getElementById("trendBody"),
         statusBar: document.getElementById("statusBar"),
@@ -475,12 +478,17 @@
           state.windowDays = windowDays;
         }
         state.includeNetwork = params.get("network") !== "0";
+        const minShared = Number(params.get("min_shared") || "1");
+        if (Number.isFinite(minShared) && minShared >= 1 && minShared <= 10) {
+          state.minSharedCount = minShared;
+        }
       }
 
       function syncUrlState() {
         const params = new URLSearchParams(window.location.search);
         params.set("window", String(state.windowDays));
         params.set("network", state.includeNetwork ? "1" : "0");
+        params.set("min_shared", String(state.minSharedCount));
         const next = `${window.location.pathname}?${params.toString()}`;
         window.history.replaceState({}, "", next);
       }
@@ -488,6 +496,12 @@
       function renderPills() {
         els.windowSelect.value = String(state.windowDays);
         els.networkToggle.checked = state.includeNetwork;
+        if (els.minSharedRange) {
+          els.minSharedRange.value = String(state.minSharedCount);
+        }
+        if (els.minSharedValue) {
+          els.minSharedValue.textContent = String(state.minSharedCount);
+        }
         for (const pill of els.filterPills) {
           pill.classList.toggle("active", Number(pill.dataset.window) === state.windowDays);
         }
@@ -526,9 +540,12 @@
         return state.trends.get(windowDays);
       }
 
-      async function ensureNetwork() {
-        if (!state.network) state.network = await fetchJson("./data/network_30d.json");
-        return state.network;
+      async function ensureNetwork(windowDays) {
+        if (!state.networks.has(windowDays)) {
+          const payload = await fetchJson(`./data/network_${windowDays}d.json`);
+          state.networks.set(windowDays, payload);
+        }
+        return state.networks.get(windowDays);
       }
 
       function filterTrendRows(rows) {
@@ -603,7 +620,7 @@
       }
 
       function renderNetwork(networkPayload) {
-        const allow = state.includeNetwork && state.windowDays === 30;
+        const allow = state.includeNetwork;
         els.networkSection.style.display = allow ? "block" : "none";
         if (!allow) return;
 
@@ -632,17 +649,9 @@
           (edge) => allowedIds.has(edge.source_repo) && allowedIds.has(edge.target_repo)
         );
 
-        if (!edges.length && nodes.length > 1) {
-          const fallback = [];
-          for (let i = 1; i < nodes.length; i += 1) {
-            fallback.push({
-              source_repo: nodes[i - 1].id,
-              target_repo: nodes[i].id,
-              shared_contributor_count: 1,
-            });
-          }
-          edges = fallback;
-        }
+        edges = edges.filter(
+          (edge) => Number(edge.shared_contributor_count || 0) >= Number(state.minSharedCount || 1)
+        );
 
         const visNodes = nodes.map((node) => ({
           id: node.id,
@@ -669,6 +678,17 @@
         if (!visNodes.length) {
           els.networkEmpty.style.display = "block";
           els.networkSummary.textContent = "No network nodes for current filter.";
+          return;
+        }
+
+        if (!visEdges.length) {
+          els.networkEmpty.style.display = "block";
+          els.networkSummary.textContent =
+            `No edges match min shared contributors = ${state.minSharedCount}.`;
+          if (state.graph) {
+            state.graph.destroy();
+            state.graph = null;
+          }
           return;
         }
 
@@ -703,7 +723,8 @@
 
         els.networkSummary.textContent =
           `Nodes: ${number(visNodes.length)} | Edges: ${number(visEdges.length)} | ` +
-          `Window: ${networkPayload.window_days || 30}D`;
+          `Window: ${networkPayload.window_days || state.windowDays}D | ` +
+          `Min shared contributors: ${state.minSharedCount}`;
       }
 
       function updateStatus(meta, trendRows, trendPayload) {
@@ -726,7 +747,7 @@
           const meta = await ensureMeta();
           const trendPayload = await ensureTrend(state.windowDays);
           const trendRows = filterTrendRows(trendPayload.rows || []);
-          const networkPayload = state.windowDays === 30 ? await ensureNetwork() : null;
+          const networkPayload = await ensureNetwork(state.windowDays);
 
           renderTrendTable(trendRows);
           renderTrendChart(trendRows);
@@ -760,7 +781,7 @@
 
         els.reloadBtn.addEventListener("click", async () => {
           state.meta = null;
-          state.network = null;
+          state.networks.clear();
           state.trends.clear();
           await reload();
         });
@@ -775,8 +796,30 @@
       }
 
       async function init() {
+        const controls = document.createElement("div");
+        controls.className = "controls";
+        controls.style.marginTop = "10px";
+        controls.innerHTML = `
+          <div></div>
+          <div></div>
+          <label class="toggle-wrap" style="justify-content:flex-start;">
+            Edge strength
+            <input id="minSharedRange" type="range" min="1" max="10" step="1" value="1" style="width:140px;" />
+            <strong id="minSharedValue">1</strong>
+          </label>
+          <div></div>
+        `;
+        els.networkSection.insertBefore(controls, els.networkGraph);
+        els.minSharedRange = document.getElementById("minSharedRange");
+        els.minSharedValue = document.getElementById("minSharedValue");
+
         parseUrlState();
         bindEvents();
+        els.minSharedRange.addEventListener("input", async (event) => {
+          state.minSharedCount = Number(event.target.value || 1);
+          els.minSharedValue.textContent = String(state.minSharedCount);
+          await reload();
+        });
         await reload();
       }
 

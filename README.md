@@ -68,6 +68,8 @@ Setup guide:
 - `docs/data/trend_7d.json`
 - `docs/data/trend_14d.json`
 - `docs/data/trend_30d.json`
+- `docs/data/network_7d.json`
+- `docs/data/network_14d.json`
 - `docs/data/network_30d.json`
 - `docs/data/top_repos.json`
 
@@ -79,4 +81,3 @@ Setup guide:
 - Ongoing cost driver: GitHub Actions usage and GitHub Pages traffic
 
 For public repositories, standard GitHub-hosted runner usage is free under GitHub's policy.
-

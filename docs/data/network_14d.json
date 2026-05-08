@@ -1,0 +1,12 @@
+{
+  "window_days": 14,
+  "analysis_end_date": null,
+  "generated_at": null,
+  "nodes": [],
+  "edges": [],
+  "summary": {
+    "node_count": 0,
+    "edge_count": 0,
+    "min_shared_count": 1
+  }
+}
