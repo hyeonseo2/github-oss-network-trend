@@ -1,180 +1,82 @@
-# GitHub OSS Network Trend
+# GitHub OSS Network Trend (Static Edition)
 
 [English](./README.md) | [한국어](./README.ko.md)
 
-An end-to-end analytics stack for GitHub repository growth and cross-repository collaboration analysis.
+This project is now a static analytics dashboard hosted on GitHub Pages.
+It no longer uses BigQuery, Cloud Run, dbt, or Terraform.
 
-This project is built with a daily batch pipeline on GitHub Actions, transforms public GitHub event data with dbt in BigQuery, and serves insights through a Flask dashboard on Cloud Run.
+## Overview
 
-## Quick Links
-- 🚀 [Live Dashboard](https://github-oss-network-trend.vercel.app/)
-- 🧪 [DE Zoomcamp Project Document](docs/de_zoomcamp_project_document.md)
-- ☁️ [Cloud Run Deploy Guide](docs/cloud_run_deploy.md)
+- Data source: GitHub REST API
+- Batch runner: GitHub Actions (daily)
+- Output: `docs/data/*.json`
+- Hosting: GitHub Pages
 
-![Trend View](./assets/demo/oss-network-trend-dashboard-trend.png)
-![Network View](./assets/demo/oss-network-trend-dashboard-network.png)
-
-## At a Glance
-- **Default view:** 30-day window + Network ON  
-- **Dashboard:** 2 key tiles (Trend, Network)  
-- **Pipeline:** GitHub Actions (daily) + dbt + BigQuery  
-- **Deployment:** Google Cloud Run
-
-## 1. Overview
-
-- Track repository momentum and contributor activity from public events (event-based metric, not raw GitHub star/fork API counts)
-- Build trend models and contributor-network models in BigQuery
-- Serve interactive Trend and Network views in a single dashboard
-
-### Event-based metrics in this project
-
-- **Activity Δ**: events in the current window minus events in the previous window
-- **Contributor Δ**: unique contributors in the current window minus unique contributors in the previous window
-- **Event Stars (window)**: event-based count for the selected window (display label only)
-- **Active Contributors (window)**: unique contributors in the selected window (display label only)
-
-## 2. Architecture
+## Architecture
 
 ```text
-GitHub Archive (public events)
-        |
-        v
-GitHub Actions (daily batch)
-        |
-        v
-GCS raw zone + BigQuery raw table (partitioned/clustered)
-        |
-        v
-dbt (staging -> intermediate -> marts)
-        |
-        v
-BigQuery marts
-  - mart_repo_trend
-  - mart_contributor_edges
-  - mart_repo_popularity_snapshots
-        |
-        v
-Flask dashboard on Cloud Run
+GitHub API
+   |
+   v
+GitHub Actions (scheduled)
+   |
+   v
+scripts/build_static_data.py
+   |
+   v
+docs/data/*.json
+   |
+   v
+GitHub Pages (docs/)
 ```
 
-## 3. Repository layout
+## Quick start
 
-```text
-open-source-ecosystem-analytics-platform/
-├── app/
-│   ├── main.py
-│   └── templates/index.html
-├── dbt/
-│   ├── macros/
-│   ├── models/
-│   │   ├── staging/
-│   │   ├── intermediate/
-│   │   ├── marts/
-│   │   └── *.yml
-│   ├── tests/
-│   └── profiles.yml(.example)
-├── docs/
-│   └── cloud_run_deploy.md
-├── terraform/
-├── .github/workflows/
-├── .env.example
-├── requirements-web.txt
-├── Makefile
-└── README.md
-```
-
-## 4. Prerequisites
-
-- Google Cloud project with BigQuery and Cloud Run enabled
-- GitHub repository connected to GitHub Actions
-- Terraform, `gcloud`, Python 3.10+, `make`
-- `dbt-core` and `dbt-bigquery`
-
-## 5. Quick start
-
-### 5.1 Configure environment
+1. Configure environment variables.
+2. Generate static data.
+3. Serve the static site locally.
 
 ```bash
 cp .env.example .env
-# fill variables, then export
 source .env
+
+make build-data
+make run-site
 ```
 
-### 5.2 Deploy infrastructure
+Open `http://127.0.0.1:8080`.
 
-```bash
-cd terraform
-terraform init
-terraform plan
-terraform apply
-```
+## GitHub Pages deployment
 
-### 5.3 Run dbt locally (optional)
+The repository includes a Pages workflow:
 
-```bash
-cd dbt
-cp profiles.yml.example profiles.yml
+- [pages.yml](.github/workflows/pages.yml)
 
-dbt debug --profiles-dir . --target prod
+The workflow:
 
-dbt run --profiles-dir . --target prod \
-  --vars '{"gcp_project_id":"'$GCP_PROJECT_ID'","raw_dataset":"oss_analytics_raw","raw_table":"raw_github_events","analysis_window_days":30,"network_window_days":30,"min_daily_events_for_trend":5}'
+1. Runs daily (UTC) and on manual dispatch.
+2. Generates fresh JSON snapshots into `docs/data`.
+3. Deploys the `docs/` directory to GitHub Pages.
 
-dbt test --profiles-dir . --target prod \
-  --vars '{"gcp_project_id":"'$GCP_PROJECT_ID'","raw_dataset":"oss_analytics_raw","raw_table":"raw_github_events"}'
-```
+Setup guide:
 
-### 5.4 Run dashboard
+- [GitHub Pages deployment guide](docs/github_pages_deploy.md)
 
-```bash
-# local
-make run-dashboard
+## Output data files
 
-# cloud run
+- `docs/data/meta.json`
+- `docs/data/trend_7d.json`
+- `docs/data/trend_14d.json`
+- `docs/data/trend_30d.json`
+- `docs/data/network_30d.json`
+- `docs/data/top_repos.json`
 
-gcloud run deploy oss-analytics-dashboard \
-  --source . \
-  --region us-central1 \
-  --platform managed \
-  --allow-unauthenticated
-```
+## Cost profile after migration
 
-## 6. Pipeline behavior (GitHub Actions)
+- BigQuery: removed
+- Cloud Run: removed
+- GCP infra: removed
+- Ongoing cost driver: GitHub Actions usage and GitHub Pages traffic
 
-Workflow: `.github/workflows/oss-batch-pipeline.yml`
+For public repositories, standard GitHub-hosted runner usage is free under GitHub's policy.
 
-1. Resolve target date (`workflow_dispatch` optional, defaults to previous day)
-2. Authenticate to GCP (OIDC preferred, SA key fallback)
-3. Ensure raw BigQuery table exists (partitioning/clustering)
-4. Export events from `githubarchive` to GCS and load into BigQuery
-5. Run `dbt run`
-6. Run `dbt test`
-7. Run quality SQL checks (null ratio / row-drop check)
-8. Write execution metadata into `pipeline_runs`
-
-## 7. Dashboard behavior
-
-- Default filter values: **30-day window** and **network view shown**
-- Trend tile is ordered by combined Activity/Contributor delta
-- Network tile renders shared-contributor edges between repos
-- Dashboard is read-only (no orchestration trigger from UI)
-
-## 8. Operational notes
-
-- Use `workflow_dispatch` inputs for backfill (`target_date`, `backfill_days`)
-- `skip_quality_gate=1` can bypass quality checks for recovery tests (use with caution)
-- Network model can be tuned by threshold variables (`network_window_days`, `min_shared_repo_count`)
-
-## 9. Data model summary
-
-- `stg_github_events`: normalized raw event staging
-- `int_repo_daily_activity`: repository daily event totals
-- `mart_repo_trend`: trend and change metrics
-- `mart_contributor_edges`: weighted contributor-sharing edges
-- `mart_repo_popularity_snapshots`: repository snapshot summary
-- `pipeline_runs`: pipeline execution status for dashboard header
-
-## 10. References
-
-- [Cloud Run deployment guide](docs/cloud_run_deploy.md)
-- [DE Zoomcamp project document](docs/de_zoomcamp_project_document.md)

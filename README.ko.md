@@ -1,169 +1,82 @@
-# GitHub OSS Network Trend
+# GitHub OSS Network Trend (정적 버전)
 
 [English](./README.md) | [한국어](./README.ko.md)
 
-GitHub 공개 이벤트를 기반으로 저장소 성장 추세(Trend)와 저장소 간 기여자 네트워크(Network)를 분석하는 엔드투엔드 분석 프로젝트입니다.
+이 프로젝트는 GitHub Pages에 배포되는 정적 대시보드로 전환되었습니다.
+이제 BigQuery, Cloud Run, dbt, Terraform을 사용하지 않습니다.
 
-이 프로젝트는 GitHub Actions 기반 일일 배치 파이프라인으로 동작하며, BigQuery의 dbt로 이벤트 기반 집계를 수행하고 Cloud Run의 Flask 대시보드에서 인사이트를 제공합니다.
+## 개요
 
-## 빠른 링크
+- 데이터 소스: GitHub REST API
+- 배치 실행: GitHub Actions (일 1회)
+- 산출물: `docs/data/*.json`
+- 호스팅: GitHub Pages
 
-- 🚀 [라이브 대시보드](https://github-oss-network-trend.vercel.app/)
-- 🧪 [DE Zoomcamp 프로젝트 문서](docs/de_zoomcamp_project_document.md)
-- ☁️ [Cloud Run 배포 가이드](docs/cloud_run_deploy.md)
-
-![트렌드 뷰](./assets/demo/oss-network-trend-dashboard-trend.png)
-
-![네트워크 뷰](./assets/demo/oss-network-trend-dashboard-network.png)
-
-## 한눈에 보기
-
-- **기본 뷰:** 30일 윈도우, 네트워크 ON
-- **대시보드:** 2개 핵심 타일 (Trend, Network)
-- **파이프라인:** GitHub Actions (일일) + dbt + BigQuery
-- **배포:** Google Cloud Run
-
-## 1. 개요
-
-- 공개 GitHub 이벤트(푸시/PR/Issue 기반)로 성장성 지표를 계산
-- 저장소 간 중복 기여자 네트워크를 생성해 연결성을 분석
-- Trend / Network 뷰를 한 화면에서 확인
-
-### 이벤트 기반 지표
-
-- **Activity Δ**: 현재 기간 이벤트 합계 - 이전 기간 이벤트 합계
-- **Contributor Δ**: 현재 기간 고유 기여자 수 - 이전 기간 고유 기여자 수
-- **Event Stars (window)**: 선택 기간 이벤트 수(표기용)
-- **Active Contributors (window)**: 선택 기간 고유 기여자 수(표기용)
-
-## 2. 아키텍처
+## 아키텍처
 
 ```text
-GitHub Archive (공개 이벤트)
-        |
-        v
-GitHub Actions (일일 배치)
-        |
-        v
-GCS raw zone + BigQuery raw 테이블(파티션/클러스터)
-        |
-        v
-dbt (staging -> intermediate -> marts)
-        |
-        v
-BigQuery marts
-  - mart_repo_trend
-  - mart_contributor_edges
-  - mart_repo_popularity_snapshots
-        |
-        v
-Cloud Run Flask 대시보드
+GitHub API
+   |
+   v
+GitHub Actions (스케줄 실행)
+   |
+   v
+scripts/build_static_data.py
+   |
+   v
+docs/data/*.json
+   |
+   v
+GitHub Pages (docs/)
 ```
 
-## 3. 폴더 구성
+## 빠른 시작
 
-```text
-open-source-ecosystem-analytics-platform/
-├── app/                  # Flask 앱 및 템플릿
-├── dbt/                  # 스테이징/중간/마트 SQL 모델
-├── docs/                 # 문서
-├── terraform/            # 인프라 IaC
-├── .github/workflows/    # 배치 파이프라인
-├── .env.example
-├── requirements-web.txt
-├── Makefile
-└── README.md
-```
-
-## 4. 실행 전 준비
-
-- BigQuery, Cloud Run이 활성화된 GCP 프로젝트
-- GitHub Actions 사용 가능한 GitHub 저장소
-- Terraform, `gcloud`, Python 3.10+, `make`
-- `dbt-core`, `dbt-bigquery`
-
-## 5. 빠른 시작
-
-### 5.1 환경 변수 설정
+1. 환경 변수를 설정합니다.
+2. 정적 데이터를 생성합니다.
+3. 로컬에서 정적 사이트를 실행합니다.
 
 ```bash
 cp .env.example .env
-# 값 채우기
 source .env
+
+make build-data
+make run-site
 ```
 
-### 5.2 인프라 배포
+브라우저에서 `http://127.0.0.1:8080` 접속.
 
-```bash
-cd terraform
-terraform init
-terraform plan
-terraform apply
-```
+## GitHub Pages 배포
 
-### 5.3 로컬에서 dbt 실행
+저장소에 Pages 배포 워크플로우가 포함되어 있습니다.
 
-```bash
-cd dbt
-cp profiles.yml.example profiles.yml
+- [pages.yml](.github/workflows/pages.yml)
 
-dbt debug --profiles-dir . --target prod
+워크플로우 동작:
 
-dbt run --profiles-dir . --target prod \
-  --vars '{"gcp_project_id":"'$GCP_PROJECT_ID'","raw_dataset":"oss_analytics_raw","raw_table":"raw_github_events","analysis_window_days":30,"network_window_days":30,"min_daily_events_for_trend":5}'
+1. 매일(UTC) 및 수동 실행
+2. `docs/data`에 최신 JSON 스냅샷 생성
+3. `docs/` 디렉터리를 GitHub Pages로 배포
 
-dbt test --profiles-dir . --target prod \
-  --vars '{"gcp_project_id":"'$GCP_PROJECT_ID'","raw_dataset":"oss_analytics_raw","raw_table":"raw_github_events"}'
-```
+설정 가이드:
 
-### 5.4 대시보드 실행
+- [GitHub Pages 배포 가이드](docs/github_pages_deploy.md)
 
-```bash
-# 로컬
-make run-dashboard
+## 생성 데이터 파일
 
-# Cloud Run 배포
+- `docs/data/meta.json`
+- `docs/data/trend_7d.json`
+- `docs/data/trend_14d.json`
+- `docs/data/trend_30d.json`
+- `docs/data/network_30d.json`
+- `docs/data/top_repos.json`
 
-gcloud run deploy oss-analytics-dashboard \
-  --source . \
-  --region us-central1 \
-  --platform managed \
-  --allow-unauthenticated
-```
+## 전환 후 비용 구조
 
-## 6. 파이프라인 동작
+- BigQuery: 제거
+- Cloud Run: 제거
+- GCP 인프라: 제거
+- 잔여 비용: GitHub Actions 사용량, GitHub Pages 트래픽
 
-`.github/workflows/oss-batch-pipeline.yml`
+공개 저장소라면 GitHub 정책상 표준 러너 사용은 무료 범위에서 운영 가능합니다.
 
-1. 대상 날짜 결정(수동 입력 가능, 기본값은 전날)
-2. GCP 인증(OIDC 우선)
-3. raw 테이블 보장(파티션/클러스터)
-4. `githubarchive` export → GCS → BigQuery 적재
-5. `dbt run`
-6. `dbt test`
-7. 품질 검증 SQL 실행
-8. 실행 이력(`pipeline_runs`) 저장
-
-## 7. 대시보드 동작
-
-- 기본 필터: **30일 + 네트워크 ON**
-- Trend는 Activity/Contributor 변화량 기반으로 정렬
-- Network는 공통 기여자 기반 엣지로 노드 간 관계 표시
-- UI에서 파이프라인을 직접 실행하지 않고 조회 전용
-
-## 8. 데이터 모델 요약
-
-- `stg_github_events`, `int_repo_daily_activity`
-- `mart_repo_trend`, `mart_contributor_edges`
-- `mart_repo_popularity_snapshots`, `pipeline_runs`
-
-## 9. 운영 참고
-
-- workflow_dispatch의 `target_date`, `backfill_days`로 재실행
-- `skip_quality_gate=1`은 임시 회피용(주의)
-- 네트워크 계산량은 `network_window_days`, `min_shared_repo_count`로 조절
-
-## 10. 문서 링크
-
-- [Cloud Run 배포 가이드](docs/cloud_run_deploy.md)
-- [DE Zoomcamp 프로젝트 문서](docs/de_zoomcamp_project_document.md)

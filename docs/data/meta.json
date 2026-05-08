@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-05-08T00:32:59+00:00",
+  "analysis_end_date": "2026-05-07",
+  "candidate_repo_count": 80,
+  "repo_count_with_events": 50,
+  "event_types": [
+    "IssuesEvent",
+    "PullRequestEvent",
+    "PushEvent"
+  ],
+  "windows": [
+    7,
+    14,
+    30
+  ],
+  "source": "github_rest_api"
+}

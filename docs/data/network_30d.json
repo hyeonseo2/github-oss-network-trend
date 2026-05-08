@@ -1,0 +1,60 @@
+{
+  "window_days": 30,
+  "analysis_end_date": "2026-05-07",
+  "generated_at": "2026-05-08T00:32:59+00:00",
+  "nodes": [
+    {
+      "id": "facebook/react",
+      "label": "facebook/react",
+      "repo_url": "https://github.com/facebook/react",
+      "events_window": 18,
+      "contributors_window": 5,
+      "stars_total": 244873,
+      "forks_total": 51004
+    },
+    {
+      "id": "ohmyzsh/ohmyzsh",
+      "label": "ohmyzsh/ohmyzsh",
+      "repo_url": "https://github.com/ohmyzsh/ohmyzsh",
+      "events_window": 18,
+      "contributors_window": 6,
+      "stars_total": 186798,
+      "forks_total": 26355
+    },
+    {
+      "id": "public-apis/public-apis",
+      "label": "public-apis/public-apis",
+      "repo_url": "https://github.com/public-apis/public-apis",
+      "events_window": 20,
+      "contributors_window": 11,
+      "stars_total": 433067,
+      "forks_total": 47365
+    },
+    {
+      "id": "vercel/next.js",
+      "label": "vercel/next.js",
+      "repo_url": "https://github.com/vercel/next.js",
+      "events_window": 43,
+      "contributors_window": 6,
+      "stars_total": 139314,
+      "forks_total": 31035
+    }
+  ],
+  "edges": [
+    {
+      "source_repo": "ohmyzsh/ohmyzsh",
+      "target_repo": "public-apis/public-apis",
+      "shared_contributor_count": 1
+    },
+    {
+      "source_repo": "facebook/react",
+      "target_repo": "vercel/next.js",
+      "shared_contributor_count": 1
+    }
+  ],
+  "summary": {
+    "node_count": 4,
+    "edge_count": 2,
+    "min_shared_count": 1
+  }
+}
