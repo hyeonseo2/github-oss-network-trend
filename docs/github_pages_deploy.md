@@ -1,36 +1,32 @@
 # GitHub Pages Deployment Guide
 
-This project deploys `docs/` to GitHub Pages using GitHub Actions.
+This repository deploys `docs/` using GitHub Actions.
 
-## 1. Enable Pages from Actions
+## 1. Enable Pages
 
 1. Open repository `Settings`.
 2. Open `Pages`.
-3. In `Build and deployment`, set `Source` to `GitHub Actions`.
+3. Set `Source` to `GitHub Actions`.
 
-## 2. Check workflow
+## 2. Workflow
 
-Workflow file:
+Workflow file: `.github/workflows/pages.yml`
 
-- `.github/workflows/pages.yml`
-
-It runs on:
+Triggers:
 
 - Daily schedule (UTC)
 - Manual run (`workflow_dispatch`)
 - Push to `main` for docs/script/workflow changes
 
-## 3. Trigger first build
+## 3. What the workflow does
 
-1. Open `Actions` tab.
-2. Select `Build and Deploy GitHub Pages`.
-3. Click `Run workflow`.
+1. Builds data snapshots with `scripts/build_static_data.py`
+2. Writes JSON files into `docs/data/`
+3. Deploys the `docs/` directory to GitHub Pages
 
-After completion, the published URL appears in the deploy job output.
+## 4. Runtime parameters
 
-## 4. Optional tuning
-
-Environment variables can be edited in workflow `Build static data snapshots` step:
+Configured in the workflow env block:
 
 - `MAX_REPOS`
 - `TREND_TOP_N`
@@ -38,5 +34,20 @@ Environment variables can be edited in workflow `Build static data snapshots` st
 - `MIN_SHARED_COUNT`
 - `REQUEST_SLEEP_MS`
 - `HTTP_TIMEOUT_SECONDS`
+- `EVENT_MAX_PAGES`
 
-Use lower values if you want faster runs and smaller JSON output.
+## 5. First deployment
+
+1. Go to `Actions`.
+2. Select `Build and Deploy GitHub Pages`.
+3. Click `Run workflow`.
+4. After success, open the page URL shown in the deploy job output.
+
+## 6. Common issues
+
+- 403 rate limit from GitHub API:
+  - Keep `GITHUB_TOKEN` enabled in workflow env
+  - Reduce `MAX_REPOS` or `EVENT_MAX_PAGES`
+- Network view has too few edges:
+  - Decrease `MIN_SHARED_COUNT`
+  - Increase `EVENT_MAX_PAGES`
