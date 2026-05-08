@@ -68,7 +68,7 @@ class GitHubClient:
 
         headers = {
             "Accept": "application/vnd.github+json",
-            "User-Agent": "oss-network-static-builder",
+            "User-Agent": "oss-network-data-builder",
             "X-GitHub-Api-Version": "2022-11-28",
         }
         if self.token:
@@ -432,7 +432,7 @@ def write_json(path: str, value: Any) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build static JSON snapshots for GitHub Pages dashboard")
+    parser = argparse.ArgumentParser(description="Build JSON snapshots for GitHub Pages dashboard")
     parser.add_argument("--output", default="docs/data", help="Output directory for JSON files")
     parser.add_argument("--max-repos", type=int, default=_env_int("MAX_REPOS", 80, 10, 300))
     parser.add_argument("--trend-top-n", type=int, default=_env_int("TREND_TOP_N", 40, 10, 200))
@@ -520,7 +520,7 @@ def main() -> int:
     write_json(f"{out}/network_30d.json", network_30d)
     write_json(f"{out}/top_repos.json", top_repos)
 
-    print("[info] generated static snapshots", file=sys.stderr)
+    print("[info] generated data snapshots", file=sys.stderr)
     return 0
 
 

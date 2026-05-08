@@ -20,7 +20,7 @@ Triggers:
 
 ## 3. What the workflow does
 
-1. Builds data snapshots with `scripts/build_static_data.py`
+1. Builds data snapshots with `scripts/build_data.py`
 2. Writes JSON files into `docs/data/`
 3. Deploys the `docs/` directory to GitHub Pages
 

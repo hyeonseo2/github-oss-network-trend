@@ -2,16 +2,16 @@
 
 [English](./README.md) | [한국어](./README.ko.md)
 
-GitHub Pages 기반 정적 OSS 트렌드 대시보드입니다.
+GitHub Pages 기반 OSS 트렌드 대시보드입니다.
 
 이 저장소는 더 이상 BigQuery, Cloud Run, dbt, Terraform을 사용하지 않습니다.
-데이터는 GitHub Actions가 생성하고 정적 JSON으로 배포합니다.
+데이터는 GitHub Actions가 생성하고 JSON 스냅샷으로 배포합니다.
 
 ## 1. 프로젝트 기능
 
 - 7D/14D/30D 윈도우별 저장소 활동 변화 추적
 - 저장소 간 공통 기여자 네트워크 엣지 생성
-- 정적 파일 기반 UI(차트/테이블/네트워크) 제공
+- 스냅샷 파일 기반 UI(차트/테이블/네트워크) 제공
 
 ## 2. 현재 아키텍처
 
@@ -22,7 +22,7 @@ GitHub REST API
 GitHub Actions (스케줄 + 수동)
     |
     v
-scripts/build_static_data.py
+scripts/build_data.py
     |
     v
 docs/data/*.json
@@ -36,7 +36,7 @@ GitHub Pages (docs/index.html)
 ```text
 open-source-ecosystem-analytics-platform/
 ├── .github/workflows/pages.yml
-├── scripts/build_static_data.py
+├── scripts/build_data.py
 ├── docs/
 │   ├── index.html
 │   ├── data/
@@ -115,7 +115,7 @@ make run-site
 
 - 네트워크 품질은 GitHub API rate limit 및 이벤트 이력 범위에 영향받음
 - 토큰 없이 실행하면 API 한도가 낮아 일부 저장소가 스킵될 수 있음
-- 정적 스냅샷 방식이라 실시간 대시보드는 아님
+- 스냅샷 방식이라 실시간 대시보드는 아님
 
 ## 10. 추가 문서
 

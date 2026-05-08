@@ -8,7 +8,7 @@ on:
     branches: ["main"]
     paths:
       - "docs/**"
-      - "scripts/build_static_data.py"
+      - "scripts/build_data.py"
       - ".github/workflows/pages.yml"
 
 permissions:
@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build static data snapshots
+      - name: Build data snapshots
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAX_REPOS: "80"
@@ -43,7 +43,7 @@ jobs:
           HTTP_TIMEOUT_SECONDS: "20"
           EVENT_MAX_PAGES: "5"
         run: |
-          python scripts/build_static_data.py --output docs/data
+          python scripts/build_data.py --output docs/data
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
