@@ -328,7 +328,7 @@ def build_network(
         metrics = snap.windows[window_days]
         if metrics["activity_current"] <= 0:
             continue
-        contributors = snap.network_contributors or metrics["contributors_set"]
+        contributors = metrics["contributors_set"]
         for contributor in contributors:
             if contributor:
                 contributor_to_repos[contributor].add(snap.repo_name)

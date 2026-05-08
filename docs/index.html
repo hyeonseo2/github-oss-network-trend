@@ -653,6 +653,27 @@
           (edge) => Number(edge.shared_contributor_count || 0) >= Number(state.minSharedCount || 1)
         );
 
+        const connectedIds = new Set();
+        for (const edge of edges) {
+          connectedIds.add(edge.source_repo);
+          connectedIds.add(edge.target_repo);
+        }
+        nodes = nodes.filter((node) => connectedIds.has(node.id));
+
+        const defaultNodeColor = {
+          border: "#2d4bf2",
+          background: "#8ea3ff",
+          highlight: { border: "#1d4ed8", background: "#c7d2fe" },
+        };
+        const dimNodeColor = {
+          border: "#cbd5e1",
+          background: "#e5e7eb",
+          highlight: { border: "#cbd5e1", background: "#e5e7eb" },
+        };
+        const defaultEdgeColor = { color: "#94a3b8", opacity: 0.72 };
+        const dimEdgeColor = { color: "#dbe3ef", opacity: 0.25 };
+        const focusEdgeColor = { color: "#335cff", opacity: 0.95 };
+
         const visNodes = nodes.map((node) => ({
           id: node.id,
           label: node.label || node.id,
@@ -660,14 +681,17 @@
             node.contributors_window || 0
           }`,
           value: Math.max(1, Number(node.events_window || 1)),
+          color: defaultNodeColor,
+          font: { color: "#0f172a", face: "Inter", size: 12 },
         }));
-        const visEdges = edges.map((edge) => ({
+        const visEdges = edges.map((edge, index) => ({
+          id: `${edge.source_repo}__${edge.target_repo}__${index}`,
           from: edge.source_repo,
           to: edge.target_repo,
           value: Number(edge.shared_contributor_count || 1),
           width: Math.max(1, Number(edge.shared_contributor_count || 1)),
           title: `Shared contributors: ${edge.shared_contributor_count || 1}`,
-          color: { color: "#94a3b8", opacity: 0.7 },
+          color: defaultEdgeColor,
         }));
 
         if (state.graph) {
@@ -693,9 +717,11 @@
         }
 
         els.networkEmpty.style.display = "none";
+        const nodesData = new vis.DataSet(visNodes);
+        const edgesData = new vis.DataSet(visEdges);
         state.graph = new vis.Network(
           els.networkGraph,
-          { nodes: visNodes, edges: visEdges },
+          { nodes: nodesData, edges: edgesData },
           {
             nodes: {
               shape: "dot",
@@ -720,6 +746,67 @@
             interaction: { hover: true, tooltipDelay: 120 },
           }
         );
+
+        const resetHighlight = () => {
+          nodesData.update(
+            visNodes.map((node) => ({
+              id: node.id,
+              color: defaultNodeColor,
+              font: { color: "#0f172a", face: "Inter", size: 12 },
+            }))
+          );
+          edgesData.update(
+            visEdges.map((edge) => ({
+              id: edge.id,
+              color: defaultEdgeColor,
+              width: edge.width,
+            }))
+          );
+        };
+
+        state.graph.on("click", (params) => {
+          const selectedNode = (params.nodes || [])[0];
+          if (!selectedNode) {
+            resetHighlight();
+            return;
+          }
+
+          const connectedNodeIds = new Set(state.graph.getConnectedNodes(selectedNode));
+          connectedNodeIds.add(selectedNode);
+          const connectedEdgeIds = new Set(state.graph.getConnectedEdges(selectedNode));
+
+          nodesData.update(
+            visNodes.map((node) =>
+              connectedNodeIds.has(node.id)
+                ? {
+                    id: node.id,
+                    color: defaultNodeColor,
+                    font: { color: "#0f172a", face: "Inter", size: 12 },
+                  }
+                : {
+                    id: node.id,
+                    color: dimNodeColor,
+                    font: { color: "#94a3b8", face: "Inter", size: 12 },
+                  }
+            )
+          );
+
+          edgesData.update(
+            visEdges.map((edge) =>
+              connectedEdgeIds.has(edge.id)
+                ? {
+                    id: edge.id,
+                    color: focusEdgeColor,
+                    width: Math.max(2, edge.width + 1),
+                  }
+                : {
+                    id: edge.id,
+                    color: dimEdgeColor,
+                    width: 1,
+                  }
+            )
+          );
+        });
 
         els.networkSummary.textContent =
           `Nodes: ${number(visNodes.length)} | Edges: ${number(visEdges.length)} | ` +
