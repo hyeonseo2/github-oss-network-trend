@@ -348,7 +348,6 @@
           <p class="seo-lead">
             공개 저장소의 최근 활동 변화(Trend)와 저장소 간 기여자 연결(Network)을 7D/14D/30D 기준으로 확인합니다.
           </p>
-          <nav class="quick-nav" id="quickNav"></nav>
         </div>
       </header>
 
@@ -450,7 +449,6 @@
         networkGraph: document.getElementById("networkGraph"),
         networkEmpty: document.getElementById("networkEmpty"),
         networkSummary: document.getElementById("networkSummary"),
-        quickNav: document.getElementById("quickNav"),
         filterPills: Array.from(document.querySelectorAll(".filter-pill")),
       };
 
@@ -506,18 +504,6 @@
         for (const pill of els.filterPills) {
           pill.classList.toggle("active", Number(pill.dataset.window) === state.windowDays);
         }
-      }
-
-      function renderQuickNav() {
-        const items = [7, 14, 30]
-          .map(
-            (d) =>
-              `<a href="?window=${d}&network=${state.includeNetwork ? "1" : "0"}" class="${
-                d === state.windowDays ? "active" : ""
-              }">${d}D</a>`
-          )
-          .join("");
-        els.quickNav.innerHTML = items;
       }
 
       async function fetchJson(path) {
@@ -844,7 +830,6 @@
           renderNetwork(networkPayload);
           updateStatus(meta, trendRows, trendPayload);
           renderPills();
-          renderQuickNav();
           syncUrlState();
         } catch (error) {
           const msg = error?.message || String(error);
